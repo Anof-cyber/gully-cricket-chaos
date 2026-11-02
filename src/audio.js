@@ -24,6 +24,22 @@ export function unlockAudio() {
       .then((buf) => (outBuf = buf))
       .catch(() => {});
   }
+  if (!wowBuf && !wowLoading) {
+    wowLoading = true;
+    fetch('/music/wow.mp3')
+      .then((r) => r.arrayBuffer())
+      .then((b) => ctx.decodeAudioData(b))
+      .then((buf) => (wowBuf = buf))
+      .catch(() => {});
+  }
+  if (!bowlOutBuf && !bowlOutLoading) {
+    bowlOutLoading = true;
+    fetch('/music/bowler-out.mp3')
+      .then((r) => r.arrayBuffer())
+      .then((b) => ctx.decodeAudioData(b))
+      .then((buf) => (bowlOutBuf = buf))
+      .catch(() => {});
+  }
   if (!cutBuf && !cutLoading) {
     cutLoading = true;
     fetch('/music/powercut.mp3')
@@ -42,6 +58,12 @@ export function unlockAudio() {
   }
 }
 
+// seconds the two "out" clips take to finish, so the next ball can wait for them
+export const outSoundLen = () => (outBuf && bowlOutBuf && !muted ? 1.2 + bowlOutBuf.duration + 0.3 : 0);
+let wowBuf = null;
+let wowLoading = false;
+let bowlOutBuf = null;
+let bowlOutLoading = false;
 let cutBuf = null;
 let cutLoading = false;
 let passBuf = null;
@@ -49,14 +71,14 @@ let passLoading = false;
 
 let outBuf = null;
 let outLoading = false;
-function playBuf(buf, vol) {
+function playBuf(buf, vol, delay = 0) {
   if (!ctx) return;
   const src = ctx.createBufferSource();
   const g = ctx.createGain();
   src.buffer = buf;
   g.gain.value = vol;
   src.connect(g).connect(master);
-  src.start();
+  src.start(ctx.currentTime + delay);
 }
 
 function tone({ type = 'sine', f0 = 440, f1 = f0, dur = 0.2, vol = 0.3, delay = 0, vib = 0 }) {
@@ -157,6 +179,9 @@ export const sfx = {
     tone({ type: 'sine', f0: 320, f1: 200, dur: 0.1, vol: 0.5 });
     noise({ dur: 0.05, vol: 0.2, hp: 1000 });
   },
+  wow() {
+    if (wowBuf) playBuf(wowBuf, 1);
+  },
   cheer() {
     noise({ dur: 1.4, vol: 0.38, hp: 500, lp: 3200, swell: 0.35 });
     tone({ type: 'sawtooth', f0: 420, f1: 520, dur: 0.6, vol: 0.05, delay: 0.1 });
@@ -165,7 +190,11 @@ export const sfx = {
     tone({ type: 'sawtooth', f0: 380, f1: 150, dur: 0.8, vol: 0.14, vib: 4 });
   },
   out() {
-    if (outBuf) return playBuf(outBuf, 1);
+    if (outBuf) {
+      playBuf(outBuf, 1); // batsman's reaction
+      if (bowlOutBuf) playBuf(bowlOutBuf, 1, 1.2); // bowler's celebration
+      return;
+    }
     tone({ type: 'square', f0: 330, f1: 330, dur: 0.18, vol: 0.18 });
     tone({ type: 'square', f0: 277, f1: 277, dur: 0.18, vol: 0.18, delay: 0.2 });
     tone({ type: 'square', f0: 220, f1: 220, dur: 0.4, vol: 0.18, delay: 0.4 });

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
-const canon = (n) => n.toLowerCase().replace(/^mixamorig[:_]?/, '').replace(/[^a-z0-9]/g, '');
+const canon = (n) => n.toLowerCase().replace(/^mixamorig[:_]?/, '').replace(/_\d+$/, '').replace(/[^a-z0-9]/g, '');
 const NEED = ['hips', 'spine', 'spine1', 'spine2', 'neck', 'head', 'leftarm', 'leftforearm', 'lefthand', 'rightarm', 'rightforearm', 'righthand', 'leftupleg', 'leftleg', 'leftfoot', 'rightupleg', 'rightleg', 'rightfoot'];
 
 export async function loadTemplates(urls) {
@@ -124,7 +124,7 @@ export function dressRig(rig, template, tint = {}) {
         o.material = mat.clone();
         o.material.map = null;
         o.material.color.set(tint.pants);
-      } else if (/footwear/i.test(n) && tint.shoe !== undefined) {
+      } else if (/footwear|outfit_shoes/i.test(n) && tint.shoe !== undefined) {
         o.material = mat.clone();
         o.material.map = null;
         o.material.color.set(tint.shoe);

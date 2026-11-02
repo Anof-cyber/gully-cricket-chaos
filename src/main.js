@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { buildWorld, C, emojiSprite, makeVehicle, makePerson } from './world.js';
 import { loadTemplates, dressRig, makeAnimal } from './models.js';
-import { sfx, unlockAudio, startAmbience, setMuted, isMuted, makeEngine } from './audio.js';
+import { sfx, outSoundLen, unlockAudio, startAmbience, setMuted, isMuted, makeEngine } from './audio.js';
 
 // ------------------------------------------------------------------ setup
 const canvas = document.getElementById('c');
@@ -394,6 +394,7 @@ function finish({ runs = 0, out = false, title, cls = 'norm', subText = '', uncl
   S.mode = 'result';
   S.t = 0;
   S.resultLen = long || celebrate ? 2.3 : out ? 2.0 : 1.7;
+  if (out) S.resultLen = Math.max(S.resultLen, outSoundLen()); // let both out sounds finish before the next ball
   const mult = out ? 1 : currentMult();
   const gained = runs * mult;
   if (mult > 1 && runs > 0) subText = `${subText}  (x${mult} = ${gained} runs!)`;
@@ -424,6 +425,7 @@ function finish({ runs = 0, out = false, title, cls = 'norm', subText = '', uncl
   if (celebrate) {
     S.cheerT = 2.4;
     sfx.cheer();
+    sfx.wow();
     S.slowT = 0.8;
     S.slowScale = 0.35;
     const o = ball.pos.clone();
@@ -1610,9 +1612,12 @@ function frame(now) {
 // ------------------------------------------------------------------ real human models (optional)
 // Drop rigged humanoid GLBs into public/models/people/ (man.glb, woman.glb). If they are missing the
 // procedural characters stay.
-loadTemplates({ male: '/models/people/man.glb', female: '/models/people/woman.glb', dog: '/models/animals/dog.glb' }).then((t) => {
+loadTemplates({ male: '/models/people/man.glb', female: '/models/people/woman.glb', dog: '/models/animals/dog.glb', batter: '/models/Batsman/batter.glb', bowler: '/models/bowler/bowler.glb' }).then((t) => {
   TPL = t;
   for (const p of W.people) {
+    // the batsman uses his own custom model, kept in its own outfit
+    if (p === W.bowler && t.bowler && dressRig(p, t.bowler, { kid: true, headScale: 1.1, height: 1 })) continue;
+    if (p === W.batter && t.batter && dressRig(p, t.batter, { kid: true, headScale: 1.1, height: 1 })) continue;
     const tpl = p.female ? t.female || t.male : t.male || t.female;
     if (!tpl) break;
     const isMale = tpl === t.male;
