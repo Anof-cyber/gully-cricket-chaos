@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+  <meta name="theme-color" content="#140a33" />
+  <title>Gully Cricket Chaos — Diwali Night</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Bungee&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="c"></canvas>
+
+  <div id="hud">
+    <div id="topL" class="chip">
+      <small>RUNS</small>
+      <b id="score">0</b>
+      <span class="sub2">WICKETS <b id="wk">0</b>/3</span>
+    </div>
+
+    <div id="topC">
+      <div id="need">NEED 18 OFF 12</div>
+      <div id="dots"></div>
+      <div id="kind"></div>
+    </div>
+
+    <div id="topR" class="chip">
+      <small>TARGET</small>
+      <b id="target">18</b>
+      <span class="sub2">BEST <b id="best">0</b></span>
+    </div>
+
+    <div id="pop"></div>
+    <div id="sub"></div>
+    <div id="combo"></div>
+    <div id="grade"></div>
+    <div id="swipe"></div>
+    <div id="flash"></div>
+    <button id="muteBtn" aria-label="Sound">🔊</button>
+
+    <div id="uncle">
+      <div class="lbl"><span id="uncleFace">🙂</span> UNCLE KA GUSSA</div>
+      <div class="bar"><div id="uncleFill"></div></div>
+    </div>
+
+    <button id="loftBtn" class="ground">GROUND</button>
+    <div id="hint"></div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="panel">
+      <div class="tag">DIWALI NIGHT EDITION</div>
+      <h1><span class="a">GULLY</span> <span class="b">CRICKET</span><br /><span class="c">CHAOS</span></h1>
+      <p class="rules">
+        Chase the target before the fireworks end. Break a <b>window</b> and you're <b>OUT</b>.
+        Score 3 balls in a row for a <b>x2 combo</b>. Watch for the <b>dog</b>, the <b>cow</b>, and <b>Aunty on the balcony</b>.
+        Make Uncle too angry and he takes your bat!
+      </p>
+      <div class="how">
+        <div><b>SWIPE</b> to swing — the swipe direction is where the ball goes<br /><i>← leg side &nbsp;↑ straight &nbsp;→ off side</i></div>
+        <div><b>LOFT</b> button toggles ground shots / big lofted shots</div>
+        <div><b>PC</b> flick the mouse, or ← ↑ → (A W D) • SHIFT / L = loft</div>
+      </div>
+      <button id="play">PLAY</button>
+      <div class="small">12 balls • 3 wickets • beat the target</div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="over">
+    <div class="panel">
+      <div class="tag" id="overTag">INNINGS OVER</div>
+      <h2 id="overTitle">Gully Ka Star</h2>
+      <div class="final"><span id="finalScore">0</span><small>RUNS</small></div>
+      <div class="small" id="overSub"></div>
+      <div class="btns">
+        <button id="again">PLAY AGAIN</button>
+        <button id="share" class="alt">SHARE</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
