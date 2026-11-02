@@ -31,10 +31,11 @@ const FIELD_SPEED = 5.0;
 const SW_DUR = 0.26; // swing length
 const SW_CONTACT = 0.12; // moment the bat reaches the contact point
 const REACH = 1.35;
-const RUNUP = 0.9;
+const RUNUP = 0.85; // underarm wind-up + delivery (no run-up)
 
 // ------------------------------------------------------------------ state
 const S = {
+  intro: 0,
   mode: 'menu', // menu | ready | runup | bowling | live | result | over
   t: 0,
   score: 0,
@@ -302,7 +303,7 @@ function makeDelivery() {
 function releaseBall() {
   const d = S.delivery;
   const x0 = ball.pos.x;
-  const y0 = clamp(ball.pos.y, 1.7, 2.4);
+  const y0 = clamp(ball.pos.y, 0.5, 1.5); // underarm release
   const z0 = ball.pos.z;
   const t1 = (d.land - z0) / d.vzv;
   const vy = (0.5 * G * t1 * t1 - y0) / t1;
@@ -363,6 +364,7 @@ function nextBall() {
   if (S.calledOff || S.won || S.ballNo >= MAX_BALLS || S.wkts >= MAX_WKTS || S.uncle >= 100) return endGame();
   S.mode = 'ready';
   S.t = 0;
+  S.intro = S.ballNo === 0 ? 2.4 : 0; // first ball: batsman shows his face before taking stance
   S.swing = { on: false, t: 0, resolved: false };
   S.react.t = 0;
   S.follow = 0;
@@ -378,7 +380,7 @@ function nextBall() {
     s.position.copy(s.userData.home);
     s.rotation.set(0, 0, 0);
   });
-  W.bowler.group.position.set(rand(-0.3, 0.3), 0, C.BOWL_Z - 1.6);
+  W.bowler.group.position.set(rand(-0.3, 0.3), 0, C.BOWL_Z);
   W.dog.state = 'idle';
   W.dog.group.position.set(4.7, 0.16, -3.4);
   W.dog.group.rotation.y = Math.PI;
@@ -618,7 +620,7 @@ function step(h) {
 
   switch (S.mode) {
     case 'ready': {
-      if (S.t > 1.1 && !trafficBlocks()) {
+      if (S.t > Math.max(1.1, S.intro) && !trafficBlocks()) {
         S.mode = 'runup';
         S.t = 0;
         el.kind.textContent = S.delivery.name;
@@ -629,8 +631,7 @@ function step(h) {
     }
     case 'runup': {
       const p = clamp(S.t / RUNUP, 0, 1);
-      W.bowler.group.position.z = lerp(C.BOWL_Z - 1.6, C.BOWL_Z + 0.2, p);
-      ball.pos.set(W.bowler.group.position.x + 0.3, 1.1 + p * 0.3, W.bowler.group.position.z + 0.1);
+      ball.pos.set(W.bowler.group.position.x + 0.3, 0.9, W.bowler.group.position.z + 0.3);
       if (S.t >= RUNUP) {
         poseBowler(0); // final overhead pose -> ball.pos = the bowling hand
         S.mode = 'bowling';
@@ -1060,13 +1061,16 @@ function poseBatter(dt) {
   }
   W.bat.rotation.set(batTilt, batYaw, 0);
   const off = (batYaw + 0.3) * 0.28;
-  bt.group.rotation.y = 2.36 + off;
+  // first ball: he stands facing the camera, then turns and settles into his stance
+  const intro = S.mode === 'ready' ? Math.max(0, S.intro - S.t) : 0;
+  const st = intro > 0 ? ((x) => x * x * (3 - 2 * x))(clamp(1 - intro / 0.9, 0, 1)) : 1;
+  bt.group.rotation.y = lerp(0, 2.36 + off, st);
 
   // stance: knees bent, bat tapping, eyes on the ball
   const wait = S.mode === 'ready' || S.mode === 'runup';
-  crouch(bt, S.swing.on ? lerp(0.95, 0.3, clamp(sw * 2, 0, 1)) : 0.95 + (wait ? Math.sin(time * 5) * 0.04 : 0));
+  crouch(bt, S.swing.on ? lerp(0.95, 0.3, clamp(sw * 2, 0, 1)) : lerp(0.05, 0.95, st) + (wait ? Math.sin(time * 5) * 0.04 : 0));
   bt.legL.rotation.x -= S.swing.on ? 0.25 * sw : 0.15; // front foot strides into the shot
-  bt.torso.rotation.x = S.swing.on ? lerp(0.55, 0.15, sw) : 0.55;
+  bt.torso.rotation.x = S.swing.on ? lerp(0.55, 0.15, sw) : lerp(0.02, 0.55, st);
   bt.torso.rotation.y = S.swing.on ? (sw - 0.35) * 0.5 : 0;
   bt.head.rotation.x = react === 'out' ? 0.35 : 0;
   bt.group.position.y = react === 'six' || react === 'run' ? Math.abs(Math.sin(time * 10)) * 0.25 : 0;
@@ -1095,7 +1099,8 @@ function poseBatter(dt) {
   syncRig(bt);
 
   const showing = S.mode === 'bowling' || S.mode === 'live' || (S.mode === 'result' && ball.hit);
-  if (showing) lookAtPoint(bt, ball.pos.x, ball.pos.z, 0.25);
+  if (intro > 0.5) lookAtPoint(bt, camBase.x, camBase.z, 0.2);
+  else if (showing) lookAtPoint(bt, ball.pos.x, ball.pos.z, 0.25);
   else lookAtPoint(bt, W.bowler.group.position.x, W.bowler.group.position.z, 0.15);
 }
 
@@ -1109,24 +1114,22 @@ function poseBowler(realDt) {
     bw.torso.rotation.x = 0.1 + Math.sin(time * 2) * 0.02;
     bw.armL.rotation.x = 0.2;
   } else if (S.mode === 'runup') {
+    // underarm: ball held at the chest, arm swings back, then forward and releases low
     const p = clamp(S.t / RUNUP, 0, 1);
-    if (p < 0.72) {
-      runCycle(bw, p * 38, 0.95);
-      bw.armR.rotation.x = -0.9;
-      bw.elbowR.rotation.x = -1.5; // carrying the ball at the chest
-    } else {
-      const q = clamp((p - 0.72) / 0.28, 0, 1);
-      const e = q * q * (3 - 2 * q);
-      bw.legL.rotation.x = lerp(0.3, -0.95, e); // front leg lands forward
-      bw.kneeL.rotation.x = lerp(0.2, 0.25, e);
-      bw.legR.rotation.x = lerp(-0.2, 0.7, e);
-      bw.kneeR.rotation.x = lerp(0.2, 0.9, e);
-      bw.torso.rotation.x = lerp(-0.25, 0.25, e);
-      bw.armR.rotation.x = lerp(-0.9, -3.0, e);
-      bw.elbowR.rotation.x = lerp(-1.5, -0.05, e);
-      bw.armL.rotation.x = lerp(-0.3, -1.7, e);
-      bw.root.position.y = Math.sin(q * Math.PI) * 0.14;
-    }
+    const sm = (lo, hi) => {
+      const x = clamp((p - lo) / (hi - lo), 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+    const back = sm(0.1, 0.5);
+    const fwd = sm(0.5, 1);
+    bw.armR.rotation.x = lerp(lerp(-0.5, 0.9, back), -1.15, fwd);
+    bw.elbowR.rotation.x = lerp(-0.9, -0.1, back);
+    bw.armL.rotation.x = -0.5 - 0.3 * fwd;
+    bw.torso.rotation.x = lerp(0.04, 0.15, fwd);
+    bw.legL.rotation.x = lerp(0, -0.5, fwd); // steps into the delivery
+    bw.kneeL.rotation.x = 0.15 * fwd;
+    bw.kneeR.rotation.x = 0.3 * fwd;
+    bw.root.position.y = -0.05 * sm(0.3, 0.9);
     bw.group.updateMatrixWorld(true);
     syncRig(bw);
     handPos(bw, ball.pos);
@@ -1135,14 +1138,14 @@ function poseBowler(realDt) {
     const f = clamp(S.follow / 0.3, 0, 1);
     const e = f * f * (3 - 2 * f);
     const relax = clamp((S.follow - 0.8) / 0.6, 0, 1);
-    bw.armR.rotation.x = lerp(lerp(-3.0, 0.9, e), 0.2, relax);
+    bw.armR.rotation.x = lerp(lerp(-1.15, -1.7, e), 0.2, relax);
     bw.elbowR.rotation.x = -0.15;
-    bw.armL.rotation.x = lerp(lerp(-1.7, 0.4, e), 0.1, relax);
-    bw.torso.rotation.x = lerp(lerp(0.25, 0.75, e), 0.1, relax);
-    bw.legL.rotation.x = lerp(-0.95, 0, relax);
-    bw.kneeL.rotation.x = lerp(0.3, 0, relax);
-    bw.legR.rotation.x = lerp(0.6, 0, relax);
-    bw.kneeR.rotation.x = lerp(0.6, 0, relax);
+    bw.armL.rotation.x = lerp(lerp(-0.8, 0.3, e), 0.1, relax);
+    bw.torso.rotation.x = lerp(lerp(0.15, 0.4, e), 0.1, relax);
+    bw.legL.rotation.x = lerp(-0.5, 0, relax);
+    bw.kneeL.rotation.x = lerp(0.15, 0, relax);
+    bw.legR.rotation.x = 0;
+    bw.kneeR.rotation.x = lerp(0.3, 0, relax);
     bw.root.position.y = lerp(-0.05, 0, relax);
     if (react === 'out') { armsUp(bw, 0.3); bw.group.position.y = Math.abs(Math.sin(time * 10)) * 0.25; }
     else if (react === 'six') { armsUp(bw, 2.4); bw.armL.rotation.x = bw.armR.rotation.x = -2.5; bw.torso.rotation.x = 0.2; }

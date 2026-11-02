@@ -472,14 +472,20 @@ export const isMuted = () => muted;
 export function makeEngine(kind) {
   if (!ctx) return null;
   if (passBuf) {
-    // recorded pass-by clip, played once as the vehicle appears
-    const src = ctx.createBufferSource();
-    const g = ctx.createGain();
-    src.buffer = passBuf;
-    g.gain.value = muted ? 0 : 0.8;
-    src.connect(g).connect(master);
-    src.start();
-    return { set() {}, stop() { try { src.stop(); } catch (e) {} } };
+    // recorded pass-by clip, started once the vehicle is close enough to hear
+    let src = null;
+    return {
+      set(vol) {
+        if (src || vol < 0.012) return;
+        src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        src.buffer = passBuf;
+        g.gain.value = muted ? 0 : 1;
+        src.connect(g).connect(master);
+        src.start();
+      },
+      stop() {}, // let the clip finish naturally
+    };
   }
   const o = ctx.createOscillator();
   const o2 = ctx.createOscillator();
