@@ -18,7 +18,7 @@ export function unlockAudio() {
   if (ctx.state === 'suspended') ctx.resume();
   if (!outBuf && !outLoading) {
     outLoading = true;
-    fetch('/music/batsman-out.mp3')
+    fetch(import.meta.env.BASE_URL + 'music/batsman-out.mp3')
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => (outBuf = buf))
@@ -26,7 +26,7 @@ export function unlockAudio() {
   }
   if (!wowBuf && !wowLoading) {
     wowLoading = true;
-    fetch('/music/wow.mp3')
+    fetch(import.meta.env.BASE_URL + 'music/wow.mp3')
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => (wowBuf = buf))
@@ -34,7 +34,7 @@ export function unlockAudio() {
   }
   if (!bowlOutBuf && !bowlOutLoading) {
     bowlOutLoading = true;
-    fetch('/music/bowler-out.mp3')
+    fetch(import.meta.env.BASE_URL + 'music/bowler-out.mp3')
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => (bowlOutBuf = buf))
@@ -42,7 +42,7 @@ export function unlockAudio() {
   }
   if (!cutBuf && !cutLoading) {
     cutLoading = true;
-    fetch('/music/powercut.mp3')
+    fetch(import.meta.env.BASE_URL + 'music/powercut.mp3')
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => (cutBuf = buf))
@@ -50,7 +50,7 @@ export function unlockAudio() {
   }
   if (!passBuf && !passLoading) {
     passLoading = true;
-    fetch('/music/pass-by.mp3')
+    fetch(import.meta.env.BASE_URL + 'music/pass-by.mp3')
       .then((r) => r.arrayBuffer())
       .then((b) => ctx.decodeAudioData(b))
       .then((buf) => (passBuf = buf))

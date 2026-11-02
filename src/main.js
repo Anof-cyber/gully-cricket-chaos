@@ -1612,7 +1612,7 @@ function frame(now) {
 // ------------------------------------------------------------------ real human models (optional)
 // Drop rigged humanoid GLBs into public/models/people/ (man.glb, woman.glb). If they are missing the
 // procedural characters stay.
-loadTemplates({ male: '/models/people/man.glb', female: '/models/people/woman.glb', dog: '/models/animals/dog.glb', batter: '/models/Batsman/batter.glb', bowler: '/models/bowler/bowler.glb' }).then((t) => {
+loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', bowler: import.meta.env.BASE_URL + 'models/bowler/bowler.glb' }).then((t) => {
   TPL = t;
   for (const p of W.people) {
     // the batsman uses his own custom model, kept in its own outfit
