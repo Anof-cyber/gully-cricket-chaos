@@ -1795,18 +1795,23 @@ function frame(now) {
 // ------------------------------------------------------------------ real human models (optional)
 // Drop rigged humanoid GLBs into public/models/people/ (man.glb, woman.glb). If they are missing the
 // procedural characters stay.
-loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', cow: import.meta.env.BASE_URL + 'models/animals/cow.glb', pole: import.meta.env.BASE_URL + 'models/props/pole.glb', ...Object.fromEntries(['auto'].map((k) => ['veh_' + k, import.meta.env.BASE_URL + `models/vehicles/${k}.glb`])) }, (p) => {
+loadTemplates({ batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', bowler: import.meta.env.BASE_URL + 'models/bowler/bowler.glb', male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', cow: import.meta.env.BASE_URL + 'models/animals/cow.glb', pole: import.meta.env.BASE_URL + 'models/props/pole.glb', ...Object.fromEntries(['auto'].map((k) => ['veh_' + k, import.meta.env.BASE_URL + `models/vehicles/${k}.glb`])) }, (p) => {
   $('loadFill').style.width = Math.round(p * 100) + '%';
   $('loadTxt').textContent = `LOADING THE GULLY… ${Math.round(p * 100)}%`;
 }).then((t) => {
   TPL = t;
   for (const p of W.people) {
+    // the two heroes use their own custom models: orange kurta for the batsman, white T-shirt for the bowler
+    const hero = p === W.batter ? t.batter : p === W.bowler ? t.bowler : null;
+    if (hero) {
+      dressRig(p, hero, { shirt: p === W.batter ? 0xff7a1a : 0xffffff, tshirt: p === W.bowler, hideHat: true, height: 1 });
+      continue;
+    }
     const tpl = p.female ? t.female || t.male : t.male || t.female;
-    if (!tpl) break;
+    if (!tpl) continue;
     const isMale = tpl === t.male;
     dressRig(p, tpl, {
-      shirt: isMale ? (p === W.batter ? 0xff7a1a : p === W.bowler ? 0xf4f4f0 : p.opts.shirt) : undefined, // batsman orange, bowler white
-      tshirt: p === W.bowler && isMale,
+      shirt: isMale ? p.opts.shirt : undefined,
       pants: isMale ? p.opts.pants : undefined,
       shoe: isMale ? p.opts.shoe : undefined,
       skin: isMale ? pick(skinTints) : undefined,
