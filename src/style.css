@@ -105,6 +105,17 @@ html, body {
 #loftBtn:active { transform: translateY(4px) scale(.97); }
 body.loft #hud::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 -100px 100px -70px rgba(255, 61, 139, .55); }
 
+#chaiBtn {
+  position: absolute; right: 18px; bottom: 74px; width: 88px; height: 88px; border-radius: 50%; padding: 0; pointer-events: auto; touch-action: none; cursor: pointer;
+  font-family: 'Bungee', Impact, sans-serif; font-size: 13px; line-height: 1; color: #4a1d00; text-align: center; display: grid; place-items: center; align-content: center;
+  background: radial-gradient(circle at 35% 28%, #ffe6a8, #ffb13b 58%, #d9741a); border: 4px solid #fff; box-shadow: 0 0 22px rgba(255, 177, 59, .7), 0 6px 0 rgba(0, 0, 0, .35);
+  animation: lp 1.2s infinite;
+}
+#chaiBtn .ico { font-size: 28px; line-height: 1; }
+#chaiBtn small { display: block; font-family: 'Baloo 2', sans-serif; font-size: 11px; font-weight: 800; opacity: .75; letter-spacing: .5px; }
+#chaiBtn:active { transform: translateY(4px) scale(.97); }
+#chaiBtn.off { filter: grayscale(.85) brightness(.7); box-shadow: 0 6px 0 rgba(0, 0, 0, .35); animation: none; }
+#chaiBtn.active { color: #fff; background: radial-gradient(circle at 35% 28%, #ff9a4d, #ff3d2b 60%, #a3120a); box-shadow: 0 0 30px rgba(255, 80, 30, .9), 0 6px 0 rgba(0, 0, 0, .35); -webkit-text-stroke: 1px #5a0c06; }
 #uncle { position: absolute; right: 16px; bottom: 22px; width: 160px; }
 #uncle .lbl { font-size: 14px; font-weight: 800; letter-spacing: 1px; text-align: right; text-shadow: 0 2px 4px #000a; }
 .bar { height: 14px; border: 2px solid #fff; border-radius: 99px; background: rgba(20, 10, 51, .8); overflow: hidden; margin-top: 2px; }
@@ -153,10 +164,12 @@ button.alt { background: linear-gradient(90deg, #14b8a6, #2de2c8); color: #07332
   .chip { top: 8px; min-width: 84px; padding: 3px 10px 5px; } .chip > b { font-size: 34px; } #topL { left: 8px; } #topR { right: 8px; }
   #need { font-size: 13px; padding: 4px 12px 3px; } #dots { max-width: 190px; gap: 4px; } #dots i { width: 12px; height: 12px; }
   #combo { top: 92px; font-size: 14px; } #uncle { width: 120px; right: 10px; bottom: 16px; }
+  #chaiBtn { width: 72px; height: 72px; right: 10px; bottom: 60px; font-size: 11px; } #chaiBtn .ico { font-size: 22px; }
   #hint { bottom: 118px; font-size: 13px; padding: 0 12px; } #loftBtn { width: 84px; height: 84px; left: 12px; bottom: 16px; }
 }
 @media (max-height: 520px) {
   .chip > b { font-size: 30px; } #topC { gap: 3px; } #dots i { width: 11px; height: 11px; } #kind { display: none; }
+  #chaiBtn { width: 60px; height: 60px; bottom: 44px; font-size: 9px; } #chaiBtn small { display: none; } #chaiBtn .ico { font-size: 20px; }
   #loftBtn { width: 68px; height: 68px; font-size: 14px; } #hint { bottom: 8px; } #uncle { bottom: 10px; }
 }
 
@@ -167,3 +180,13 @@ body.blackout #hud::before { content: ''; position: absolute; inset: 0; backgrou
 
 #muteBtn { position: absolute; right: 14px; top: 104px; width: 44px; height: 44px; padding: 0; font-size: 20px; line-height: 1; border-radius: 50%; pointer-events: auto; background: rgba(20, 10, 51, .85); border: 2px solid var(--gold); box-shadow: none; }
 @media (max-width: 700px) { #muteBtn { top: 96px; right: 8px; width: 38px; height: 38px; font-size: 17px; } }
+
+/* ---------- loading bar ---------- */
+#loader { margin: 6px auto 12px; width: min(320px, 80%); transition: opacity .4s, height .4s; }
+#loader .bar { height: 12px; border-radius: 99px; background: rgba(255, 255, 255, .14); overflow: hidden; border: 2px solid rgba(255, 255, 255, .35); }
+#loader .bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--teal), var(--gold), var(--pink)); transition: width .25s; }
+#loadTxt { margin-top: 6px; font-family: 'Bungee', Impact, sans-serif; font-size: 12px; letter-spacing: 1px; color: var(--gold); text-align: center; }
+#loader.done { opacity: 0; height: 0; margin: 0; overflow: hidden; pointer-events: none; }
+#play:disabled { filter: grayscale(.8) brightness(.7); cursor: wait; animation: none; }
+
+.credit { margin-top: 8px; font-size: 11px; opacity: .55; }

@@ -9,20 +9,64 @@ import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js
 const canon = (n) => n.toLowerCase().replace(/^mixamorig[:_]?/, '').replace(/_\d+$/, '').replace(/[^a-z0-9]/g, '');
 const NEED = ['hips', 'spine', 'spine1', 'spine2', 'neck', 'head', 'leftarm', 'leftforearm', 'lefthand', 'rightarm', 'rightforearm', 'righthand', 'leftupleg', 'leftleg', 'leftfoot', 'rightupleg', 'rightleg', 'rightfoot'];
 
-export async function loadTemplates(urls) {
+export async function loadTemplates(urls, onProgress) {
   const loader = new GLTFLoader();
   const out = {};
+  const prog = {}; // bytes loaded per file, for one combined progress value
+  const report = () => {
+    if (!onProgress) return;
+    const vals = Object.values(prog);
+    const loaded = vals.reduce((a, v) => a + v.loaded, 0);
+    const total = vals.reduce((a, v) => a + (v.total || v.loaded), 0);
+    onProgress(total ? Math.min(1, loaded / total) : 0);
+  };
   await Promise.all(
     Object.entries(urls).map(async ([key, url]) => {
+      prog[key] = { loaded: 0, total: 0 };
       try {
-        const gltf = await loader.loadAsync(url);
+        const gltf = await loader.loadAsync(url, (e) => {
+          prog[key] = { loaded: e.loaded, total: e.total || 0 };
+          report();
+        });
         out[key] = gltf.scene;
       } catch {
         /* model missing: that role keeps the procedural character */
       }
+      prog[key] = { loaded: prog[key].total || 1, total: prog[key].total || 1 };
+      report();
     })
   );
   return out;
+}
+
+// Turns a long kurta / coat into a T-shirt: drops the triangles below the hips and beyond mid upper-arm.
+function cutToTshirt(mesh, bones) {
+  const hipsY = bones.hips.getWorldPosition(new THREE.Vector3()).y;
+  const hipsX = bones.hips.getWorldPosition(new THREE.Vector3()).x;
+  const sh = bones.leftarm.getWorldPosition(new THREE.Vector3());
+  const el = bones.leftforearm.getWorldPosition(new THREE.Vector3());
+  const lim = Math.abs((sh.x + el.x) / 2 - hipsX) * 0.95; // sleeve ends about mid upper-arm
+  const hemY = hipsY + (bones.spine1.getWorldPosition(new THREE.Vector3()).y - hipsY) * 0.35; // T-shirt hem a little above the hips
+  const g = mesh.geometry.clone();
+  const pos = g.attributes.position;
+  const idx = g.index.array;
+  const keep = [];
+  const v = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  mesh.updateWorldMatrix(true, false);
+  for (let i = 0; i < idx.length; i += 3) {
+    c.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) c.add(v.fromBufferAttribute(pos, idx[i + k]).applyMatrix4(mesh.matrixWorld));
+    c.multiplyScalar(1 / 3);
+    if (c.y > hemY && Math.abs(c.x - hipsX) <= lim) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+  }
+  if (keep.length < 30) return; // unexpected shape: leave the garment alone
+  g.setIndex(keep);
+  mesh.geometry = g;
+  if (mesh.material) {
+    mesh.material = mesh.material.clone();
+    mesh.material.side = THREE.DoubleSide;
+  }
 }
 
 const _a = new THREE.Vector3();
@@ -53,6 +97,28 @@ function setWorldQuat(bone, Wd) {
   bone.parent.getWorldQuaternion(_pq);
   bone.quaternion.copy(_pq.invert().multiply(Wd));
   bone.updateMatrixWorld(false);
+}
+
+// A static model (e.g. a vehicle) fitted to a length along Z, standing on the ground, facing +Z.
+export function cloneModel(template, { length = 2, yaw = 0 } = {}) {
+  const scene = cloneSkinned(template);
+  const holder = new THREE.Group();
+  holder.add(scene);
+  scene.rotation.y = yaw;
+  holder.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(scene);
+  const size = box.getSize(new THREE.Vector3());
+  const k = length / Math.max(size.z, 0.001);
+  scene.scale.setScalar(k);
+  scene.position.set(-((box.min.x + box.max.x) / 2) * k, -box.min.y * k, -((box.min.z + box.max.z) / 2) * k);
+  scene.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.userData.shared = true; // geometry/materials belong to the template: never dispose them
+    }
+  });
+  return holder;
 }
 
 // Animated animal (e.g. a fox as the street dog). Faces +X like the game's procedural dog.
@@ -144,6 +210,11 @@ export function dressRig(rig, template, tint = {}) {
 
   // bind-pose data (holder is at identity here)
   holder.updateMatrixWorld(true);
+  if (tint.tshirt) {
+    scene.traverse((o) => {
+      if (o.isMesh && o.geometry && o.geometry.index && /outfit_top/i.test((o.material && o.material.name) || '')) cutToTshirt(o, bones);
+    });
+  }
   const rest = {};
   for (const k of NEED) {
     rest[k] = { q: bones[k].getWorldQuaternion(new THREE.Quaternion()), p: bones[k].getWorldPosition(new THREE.Vector3()) };

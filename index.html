@@ -17,7 +17,7 @@
     <div id="topL" class="chip">
       <small>RUNS</small>
       <b id="score">0</b>
-      <span class="sub2">WICKETS <b id="wk">0</b>/3</span>
+      <span class="sub2">WICKETS <b id="wk">0</b>/<b id="wkMax">3</b></span>
     </div>
 
     <div id="topC">
@@ -45,6 +45,7 @@
       <div class="bar"><div id="uncleFill"></div></div>
     </div>
 
+    <button id="chaiBtn" class="ready"><span class="ico">☕</span>BOOST<small id="chaiSub">press B</small></button>
     <button id="loftBtn" class="ground">GROUND</button>
     <div id="hint"></div>
   </div>
@@ -54,17 +55,20 @@
       <div class="tag">DIWALI NIGHT EDITION</div>
       <h1><span class="a">GULLY</span> <span class="b">CRICKET</span><br /><span class="c">CHAOS</span></h1>
       <p class="rules">
-        Chase the target before the fireworks end. Break a <b>window</b> and you're <b>OUT</b>.
+        Chase a random target before the balls or wickets run out. Break a <b>window</b> and you're <b>OUT</b>.
         Score 3 balls in a row for a <b>x2 combo</b>. Watch for the <b>dog</b>, the <b>cow</b>, and <b>Aunty on the balcony</b>.
         Make Uncle too angry and he takes your bat!
       </p>
       <div class="how">
         <div><b>SWIPE</b> to swing — the swipe direction is where the ball goes<br /><i>← leg side &nbsp;↑ straight &nbsp;→ off side</i></div>
         <div><b>LOFT</b> button toggles ground shots / big lofted shots</div>
+        <div><b>☕ BOOST</b> (once a match): drink chai — your next <b>3 balls</b> fly for <b>SIX</b>!</div>
         <div><b>PC</b> flick the mouse, or ← ↑ → (A W D) • SHIFT / L = loft</div>
       </div>
-      <button id="play">PLAY</button>
-      <div class="small">12 balls • 3 wickets • beat the target</div>
+      <div id="loader"><div class="bar"><i id="loadFill"></i></div><div id="loadTxt">LOADING THE GULLY… 0%</div></div>
+      <button id="play" disabled>PLAY</button>
+      <div class="small">random target • random balls • random wickets</div>
+      <div class="small credit">Models (Sketchfab): Cow, Auto-rickshaw, Electricity pole • Fox (PixelMannen / @tomkranis, CC0 + CC-BY 4.0) — see CREDITS.md</div>
     </div>
   </div>
 

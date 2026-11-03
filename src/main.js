@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { buildWorld, C, emojiSprite, makeVehicle, makePerson } from './world.js';
-import { loadTemplates, dressRig, makeAnimal } from './models.js';
+import { loadTemplates, dressRig, makeAnimal, cloneModel } from './models.js';
 import { sfx, outSoundLen, unlockAudio, startAmbience, setMuted, isMuted, makeEngine } from './audio.js';
 
 // ------------------------------------------------------------------ setup
@@ -25,12 +25,13 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const skinTints = [undefined, 0xe3b48f, 0xc08a60, 0xa86e45];
 const G = 18;
 const FIXED = 1 / 120;
-const MAX_BALLS = 12;
-const MAX_WKTS = 3;
+let MAX_BALLS = 12; // overs, wickets and target are rolled fresh for every match
+let MAX_WKTS = 3;
 const FIELD_SPEED = 5.0;
 const SW_DUR = 0.26; // swing length
 const SW_CONTACT = 0.12; // moment the bat reaches the contact point
 const REACH = 1.35;
+const DRINK_LEN = 2.7; // seconds of the chai-drinking animation
 const RUNUP = 0.85; // underarm wind-up + delivery (no run-up)
 
 // ------------------------------------------------------------------ state
@@ -47,6 +48,10 @@ const S = {
   lofted: false,
   combo: 0,
   boost: false,
+  chaiUsed: false, // the BOOST button is once a match
+  chaiBalls: 0, // balls left that fly for six
+  holdUntil: 0, // ready-state time until which the delivery waits (chai break)
+  chaiPop: false,
   swing: { on: false, t: 0, resolved: false },
   swungThisBall: false,
   slowT: 0,
@@ -126,6 +131,54 @@ function updateParticles(dt) {
   pMesh.instanceMatrix.needsUpdate = true;
 }
 
+// soft round puffs (chai steam, bat sparks) instead of the blocky particles
+const puffTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(255,255,255,.55)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const puffs = Array.from({ length: 36 }, () => {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, transparent: true, depthWrite: false, opacity: 0 }));
+  s.visible = false;
+  scene.add(s);
+  return { s, life: 0, max: 1, vel: new THREE.Vector3(), size: 0.1, grow: 1, op: 0.5 };
+});
+let puffCursor = 0;
+function puff(pos, { color = 0xffffff, size = 0.08, life = 1, vel = [0, 0.3, 0], grow = 2.2, opacity = 0.5, additive = false } = {}) {
+  const p = puffs[puffCursor];
+  puffCursor = (puffCursor + 1) % puffs.length;
+  p.life = p.max = life;
+  p.size = size;
+  p.grow = grow;
+  p.op = opacity;
+  p.vel.set(vel[0] + rand(-0.04, 0.04), vel[1], vel[2] + rand(-0.04, 0.04));
+  p.s.position.copy(pos);
+  p.s.material.color.set(color);
+  p.s.material.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+  p.s.visible = true;
+}
+function updatePuffs(dt) {
+  for (const p of puffs) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) {
+      p.s.visible = false;
+      continue;
+    }
+    const k = p.life / p.max;
+    p.s.position.addScaledVector(p.vel, dt);
+    p.s.scale.setScalar(p.size * (1 + (1 - k) * p.grow));
+    p.s.material.opacity = p.op * Math.sin(Math.min(1, k * 1.4) * Math.PI * 0.5) * (k > 0.8 ? (1 - k) * 5 : 1);
+  }
+}
+
 const floaters = [];
 function floater(ch, pos, scale = 1.3) {
   const s = emojiSprite(ch, scale);
@@ -137,7 +190,7 @@ function floater(ch, pos, scale = 1.3) {
 // ------------------------------------------------------------------ HUD
 const el = {
   score: $('score'), wk: $('wk'), need: $('need'), target: $('target'), best: $('best'), dots: $('dots'), kind: $('kind'), pop: $('pop'), sub: $('sub'),
-  uncle: $('uncle'), uncleFill: $('uncleFill'), uncleFace: $('uncleFace'), combo: $('combo'), grade: $('grade'), swipe: $('swipe'), loftBtn: $('loftBtn'),
+  uncle: $('uncle'), uncleFill: $('uncleFill'), uncleFace: $('uncleFace'), combo: $('combo'), grade: $('grade'), swipe: $('swipe'), loftBtn: $('loftBtn'), chaiBtn: $('chaiBtn'), chaiSub: $('chaiSub'),
   hint: $('hint'), menu: $('menu'), over: $('over'),
 };
 let subTimer = 0;
@@ -160,6 +213,7 @@ function buildDots() {
 function refreshHud() {
   el.score.textContent = S.score;
   el.wk.textContent = S.wkts;
+  $('wkMax').textContent = MAX_WKTS;
   el.target.textContent = S.target;
   const left = MAX_BALLS - S.ballNo;
   const need = Math.max(0, S.target - S.score);
@@ -171,8 +225,13 @@ function refreshHud() {
   el.uncle.classList.toggle('hot', u >= 70);
   const m = currentMult();
   el.combo.textContent = m > 1 ? `${S.boost ? '☕ BOOST' : '🔥 COMBO'}  NEXT BALL x${m}` : S.combo > 0 ? `STREAK ${S.combo}  •  score 3 in a row for x2` : '';
-  el.combo.classList.toggle('on', m > 1 || S.combo > 0);
-  el.combo.classList.toggle('hot', m > 1);
+  const chaiTxt = S.chaiBalls > 0 ? `☕ CHAI POWER — ${S.chaiBalls} ${S.chaiBalls === 1 ? 'BALL' : 'BALLS'} = SIX` : '';
+  if (chaiTxt) el.combo.textContent = chaiTxt;
+  el.chaiBtn.classList.toggle('off', S.chaiUsed && S.chaiBalls <= 0);
+  el.chaiBtn.classList.toggle('active', S.chaiBalls > 0);
+  el.chaiSub.textContent = S.chaiBalls > 0 ? `${S.chaiBalls} left` : S.chaiUsed ? 'used' : touchy ? 'x1' : 'press B';
+  el.combo.classList.toggle('on', m > 1 || S.combo > 0 || S.chaiBalls > 0);
+  el.combo.classList.toggle('hot', m > 1 || S.chaiBalls > 0);
 }
 
 // ------------------------------------------------------------------ input
@@ -250,11 +309,28 @@ el.loftBtn.addEventListener('pointerdown', (e) => {
   unlockAudio();
   setLoft(!S.lofted);
 });
+function drinkChai() {
+  // only in the calm moment before a delivery, once per match
+  if (S.mode !== 'ready' || S.chaiUsed || S.chaiBalls > 0 || S.holdUntil > 0 || S.t < S.intro) return;
+  S.chaiUsed = true;
+  S.chaiBalls = 3;
+  S.chaiPop = false;
+  S.holdUntil = S.t + DRINK_LEN;
+  S.sl1 = S.sl2 = false;
+  sfx.tick();
+  refreshHud();
+}
+el.chaiBtn.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  unlockAudio();
+  drinkChai();
+});
 window.addEventListener('keydown', (e) => {
   unlockAudio();
   if (e.repeat) return;
+  if (e.code === 'KeyB') drinkChai();
   if (S.mode === 'menu' || S.mode === 'over') {
-    if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startGame(); }
+    if ((e.code === 'Space' || e.code === 'Enter') && !$('play').disabled) { e.preventDefault(); startGame(); }
     return;
   }
   switch (e.code) {
@@ -270,7 +346,7 @@ function resize() {
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  camera.fov = camera.aspect < 0.75 ? 66 : camera.aspect < 1.2 ? 54 : 46;
+  camera.fov = camera.aspect < 0.75 ? 68 : camera.aspect < 1.2 ? 57 : 50;
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -326,10 +402,17 @@ function releaseBall() {
 }
 
 // ------------------------------------------------------------------ flow
+function rollMatch() {
+  MAX_BALLS = 6 + Math.floor(Math.random() * 13); // 6-18 balls
+  MAX_WKTS = 2 + Math.floor(Math.random() * 4); // 2-5 wickets
+  S.target = clamp(Math.round(MAX_BALLS * rand(1.5, 2.6)), 8, 45);
+}
 function newGameState() {
-  S.target = 18 + 6 * S.round;
+  rollMatch();
   S.combo = 0;
   S.boost = false;
+  S.chaiUsed = false;
+  S.chaiBalls = 0;
   setLoft(false);
   S.won = false;
   S.calledOff = false;
@@ -364,6 +447,8 @@ function nextBall() {
   if (S.calledOff || S.won || S.ballNo >= MAX_BALLS || S.wkts >= MAX_WKTS || S.uncle >= 100) return endGame();
   S.mode = 'ready';
   S.t = 0;
+  S.holdUntil = 0;
+  S.chaiPop = false;
   S.intro = S.ballNo === 0 ? 2.4 : 0; // first ball: batsman shows his face before taking stance
   S.swing = { on: false, t: 0, resolved: false };
   S.react.t = 0;
@@ -395,6 +480,7 @@ function finish({ runs = 0, out = false, title, cls = 'norm', subText = '', uncl
   if (S.mode === 'result') return;
   S.mode = 'result';
   S.t = 0;
+  if (S.chaiBalls > 0) S.chaiBalls--;
   S.resultLen = long || celebrate ? 2.3 : out ? 2.0 : 1.7;
   if (out) S.resultLen = Math.max(S.resultLen, outSoundLen()); // let both out sounds finish before the next ball
   const mult = out ? 1 : currentMult();
@@ -461,7 +547,7 @@ function endGame() {
   $('overTag').textContent = tag;
   $('overTitle').textContent = title;
   $('finalScore').textContent = s;
-  $('overSub').textContent = S.calledOff ? `The transformer blew — no light, no cricket. Score: ${s}  •  Best: ${S.best}` : S.won ? `Next target: ${S.target + 6}  •  Best: ${S.best}` : `Needed ${S.target - s} more to win  •  Best: ${S.best}`;
+  $('overSub').textContent = S.calledOff ? `The transformer blew — no light, no cricket. Score: ${s}  •  Best: ${S.best}` : S.won ? `Next match: new target, overs and wickets  •  Best: ${S.best}` : `Needed ${S.target - s} more to win  •  Best: ${S.best}`;
   $('again').textContent = S.calledOff ? 'LIGHTS BACK ON' : S.won ? 'NEXT MATCH' : 'TRY AGAIN';
   setTimeout(() => el.over.classList.remove('hidden'), 700);
 }
@@ -499,6 +585,8 @@ function showGrade(q, dz) {
 const currentMult = () => (S.combo >= 5 ? 3 : S.combo >= 2 ? 2 : 1) * (S.boost ? 2 : 1);
 
 function hitBall(q, dz) {
+  const chai = S.chaiBalls > 0; // chai power: any contact flies for six
+  if (chai) q = Math.max(q, 0.92);
   ball.hit = true;
   ball.bounced = false;
   ball.e = 0.55;
@@ -507,7 +595,7 @@ function hitBall(q, dz) {
   S.mode = 'live';
   S.history.length = 0;
   W.trail.visible = true;
-  const lofted = S.lofted;
+  const lofted = S.lofted || chai;
 
   if (q < 0.2) {
     // thick edge – flies behind the batter
@@ -526,7 +614,8 @@ function hitBall(q, dz) {
     return;
   }
 
-  const yaw = S.aimYaw + clamp(ball.pos.x, -1, 1) * 0.15 - dz * 0.1 + (1 - q) * rand(-0.35, 0.35);
+  let yaw = S.aimYaw + clamp(ball.pos.x, -1, 1) * 0.15 - dz * 0.1 + (1 - q) * rand(-0.35, 0.35);
+  if (chai) yaw = clamp(yaw, -0.2, 0.2); // keep it inside the gully walls
   const perfect = q > 0.85;
   const speed = (lofted ? 11 + q * 16 : 8 + q * 17) * (perfect ? 1.08 : 1);
   const vy = lofted ? 4 + 8 * (0.5 + 0.5 * q) : 0.5 + rand(0, 1.3);
@@ -620,7 +709,15 @@ function step(h) {
 
   switch (S.mode) {
     case 'ready': {
-      if (S.t > Math.max(1.1, S.intro) && !trafficBlocks()) {
+      if (S.holdUntil > 0 && !S.chaiPop && S.t >= S.holdUntil - 0.75) {
+        S.chaiPop = true;
+        pop('☕ CHAI POWER!', 'six');
+        sub('Agli 3 gend = SIX! Bas bat ghumao!', 2400);
+        sfx.power();
+        burst(new THREE.Vector3(C.BAT_X, 1.4, C.BAT_Z), [0xffd23f, 0xff8a1f, 0xff3b30], 50, 5, { up: 3, size: 0.1, life: 1.2, grav: 0.4 });
+        refreshHud();
+      }
+      if (S.t > Math.max(1.1, S.intro, S.holdUntil) && !trafficBlocks()) {
         S.mode = 'runup';
         S.t = 0;
         el.kind.textContent = S.delivery.name;
@@ -845,10 +942,11 @@ function liveEvents(h) {
   }
 
   // tea cart
-  if (p.x > -6.5 && p.x < -5.3 && p.z > -7.4 && p.z < -5.8 && p.y < 2.4) {
+  const tcp = W.tea.position;
+  if (p.x > tcp.x - 0.8 && p.x < tcp.x + 0.8 && p.z > tcp.z - 0.8 && p.z < tcp.z + 0.8 && p.y < 2.4) {
     sfx.splash();
-    burst(new THREE.Vector3(-5.9, 1.3, -6.6), [0xc98a4b, 0xffe9b0, 0xffffff], 50, 4, { up: 4, life: 1.1 });
-    floater('☕', new THREE.Vector3(-5.9, 2.6, -6.6), 1.3);
+    burst(new THREE.Vector3(tcp.x, 1.3, tcp.z), [0xc98a4b, 0xffe9b0, 0xffffff], 50, 4, { up: 4, life: 1.1 });
+    floater('☕', new THREE.Vector3(tcp.x, 2.6, tcp.z), 1.3);
     W.vendor.cry = 1.5;
     finish({ runs: 2, title: 'CHAI CHHALAK GAYI!', cls: 'fun', subText: 'Chai boost! Next ball scores DOUBLE', uncle: 10, dead: true, long: true });
     S.boost = true;
@@ -1038,10 +1136,46 @@ const handPos = (r, out) => (r.model ? r.model.handPos('R', out) : r.handR.getWo
 const gripCur = new THREE.Vector3(0.05, 0.3, 0.34);
 const gripTgt = new THREE.Vector3();
 
+// the glass of cutting chai he drinks on BOOST
+const cup = new THREE.Group();
+{
+  // a tapered "cutting chai" glass: clear walls, milky-brown chai, foam on top, thick base
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.028, 0.09, 20, 1, true), new THREE.MeshStandardMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0.32, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+  const tea = new THREE.Mesh(new THREE.CylinderGeometry(0.0335, 0.0275, 0.07, 20), new THREE.MeshStandardMaterial({ color: 0xc27a2c, roughness: 0.3, emissive: 0x4a2306, emissiveIntensity: 0.6 }));
+  tea.position.y = -0.008;
+  const foam = new THREE.Mesh(new THREE.CylinderGeometry(0.0335, 0.0335, 0.006, 20), new THREE.MeshStandardMaterial({ color: 0xf1d9b0, roughness: 0.9 }));
+  foam.position.y = 0.029;
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.0025, 8, 24), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1 }));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.045;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.03, 0.012, 20), new THREE.MeshStandardMaterial({ color: 0xdfeaf2, transparent: true, opacity: 0.7 }));
+  base.position.y = -0.045;
+  cup.add(glass, tea, foam, rim, base);
+  cup.scale.setScalar(1.5);
+  cup.visible = false;
+  scene.add(cup);
+}
+const _hp = new THREE.Vector3();
+const _mouth = new THREE.Vector3();
+const _rest = new THREE.Vector3();
+const sm3 = (x) => {
+  x = clamp(x, 0, 1);
+  return x * x * (3 - 2 * x);
+};
+
 function poseBatter(dt) {
   const bt = W.batter;
   resetPose(bt);
   const react = S.react.t > 0 ? S.react.kind : null;
+  // 'stand' = how much he stands upright facing the camera (first-ball intro, chai break) vs. his batting stance
+  const intro = S.mode === 'ready' ? Math.max(0, S.intro - S.t) : 0;
+  let stand = intro > 0 ? 1 - sm3(1 - intro / 0.9) : 0;
+  const dT = S.mode === 'ready' && S.holdUntil > 0 ? S.t - (S.holdUntil - DRINK_LEN) : -1;
+  const drinking = dT >= 0 && dT < DRINK_LEN;
+  if (drinking) stand = Math.max(stand, sm3(dT / 0.5) * (1 - sm3((dT - 2.05) / 0.6)));
+  const st = 1 - stand;
+  const sip = drinking ? sm3((dT - 0.45) / 0.35) * (1 - sm3((dT - 1.95) / 0.3)) : 0;
+  const pulse = drinking && dT > 0.8 ? 0.5 + 0.5 * Math.sin((dT - 0.8) * 4.4 - 1.57) : 0;
   let ty = -0.3;
   let tt = 0.3;
   let sw = 0;
@@ -1054,16 +1188,13 @@ function poseBatter(dt) {
     batTilt = tt;
   } else {
     if (react === 'six' || react === 'run') { ty = 0.2; tt = 2.7; }
-    else if (react === 'out') { ty = -0.3; tt = 0.1; }
+    else if (react === 'out' || drinking) { ty = -0.3; tt = 0.1; }
     const k = 1 - Math.exp(-8 * dt);
     batYaw = lerp(batYaw, ty, k);
     batTilt = lerp(batTilt, tt, k);
   }
   W.bat.rotation.set(batTilt, batYaw, 0);
   const off = (batYaw + 0.3) * 0.28;
-  // first ball: he stands facing the camera, then turns and settles into his stance
-  const intro = S.mode === 'ready' ? Math.max(0, S.intro - S.t) : 0;
-  const st = intro > 0 ? ((x) => x * x * (3 - 2 * x))(clamp(1 - intro / 0.9, 0, 1)) : 1;
   bt.group.rotation.y = lerp(0, 2.36 + off, st);
 
   // stance: knees bent, bat tapping, eyes on the ball
@@ -1072,7 +1203,7 @@ function poseBatter(dt) {
   bt.legL.rotation.x -= S.swing.on ? 0.25 * sw : 0.15; // front foot strides into the shot
   bt.torso.rotation.x = S.swing.on ? lerp(0.55, 0.15, sw) : lerp(0.02, 0.55, st);
   bt.torso.rotation.y = S.swing.on ? (sw - 0.35) * 0.5 : 0;
-  bt.head.rotation.x = react === 'out' ? 0.35 : 0;
+  bt.head.rotation.x = react === 'out' ? 0.35 : -0.3 * sip * pulse;
   bt.group.position.y = react === 'six' || react === 'run' ? Math.abs(Math.sin(time * 10)) * 0.25 : 0;
   if (react === 'six' || react === 'run') {
     bt.torso.rotation.x = -0.1;
@@ -1087,6 +1218,7 @@ function poseBatter(dt) {
   if (S.swing.on) gripTgt.set(lerp(0.15, -0.25, sw), 0.3, lerp(0.3, 0.42, sw));
   else if (react === 'six' || react === 'run') gripTgt.set(0.1, 0.95, 0.22);
   else if (react === 'out') gripTgt.set(0.05, 0.18, 0.32);
+  else if (drinking) gripTgt.set(-0.16, 0.02, 0.26); // bat hangs low in the left hand
   else gripTgt.set(0.04, 0.2, 0.36);
   if (S.swing.on) gripCur.copy(gripTgt);
   else gripCur.lerp(gripTgt, 1 - Math.exp(-12 * dt));
@@ -1096,10 +1228,34 @@ function poseBatter(dt) {
   _hd.set(0, 1, 0).applyQuaternion(W.bat.quaternion); // handle direction
   ikArm(bt, -1, _bw.copy(W.bat.position).addScaledVector(_hd, -0.02)); // top hand
   ikArm(bt, 1, _bw.copy(W.bat.position).addScaledVector(_hd, -0.17)); // bottom hand
+  if (drinking) {
+    // right hand brings the glass up to his mouth for a couple of sips
+    const s = bt.scale || 1;
+    const hb = bt.model && bt.model.bones && bt.model.bones.head;
+    if (hb) hb.getWorldPosition(_hp);
+    else bt.head.getWorldPosition(_hp);
+    const yaw = bt.group.rotation.y + bt.torso.rotation.y;
+    _mouth.set(_hp.x + Math.sin(yaw) * 0.14 * s, _hp.y + (hb ? -0.07 : -0.12) * s, _hp.z + Math.cos(yaw) * 0.14 * s);
+    bt.torso.localToWorld(_rest.set(0.22, 0.02, 0.3));
+    _mouth.y += 0.02 * pulse * sip;
+    POLE_R.set(0.35, -1, -0.15); // elbow stays low and close to the body
+    ikArm(bt, 1, _bw.lerpVectors(_rest, _mouth, sip));
+    POLE_R.set(0.7, -0.8, -0.35);
+    if (dT > 0.8 && !S.sl1) { S.sl1 = true; sfx.slurp(); }
+    if (dT > 1.5 && !S.sl2) { S.sl2 = true; sfx.slurp(); }
+  }
   syncRig(bt);
+  if (drinking && dT < 2.45) {
+    handPos(bt, cup.position);
+    cup.position.y += 0.01;
+    cup.rotation.x = -0.45 * sip * pulse; // tips towards his mouth on each sip
+    cup.visible = true;
+    if (Math.random() < 0.35) puff(_hp.copy(cup.position).setY(cup.position.y + 0.1), { size: 0.06, life: 1.3, vel: [0, 0.22, 0], grow: 2.6, opacity: 0.4 });
+  } else cup.visible = false;
+  if (S.chaiBalls > 0 && Math.random() < 0.35) puff(W.bat.position, { color: Math.random() < 0.5 ? 0xffd23f : 0xff8a1f, size: 0.07, life: 0.7, vel: [0, 0.5, 0], grow: 0.6, opacity: 0.9, additive: true });
 
   const showing = S.mode === 'bowling' || S.mode === 'live' || (S.mode === 'result' && ball.hit);
-  if (intro > 0.5) lookAtPoint(bt, camBase.x, camBase.z, 0.2);
+  if (stand > 0.5) lookAtPoint(bt, camBase.x, camBase.z, 0.2);
   else if (showing) lookAtPoint(bt, ball.pos.x, ball.pos.z, 0.25);
   else lookAtPoint(bt, W.bowler.group.position.x, W.bowler.group.position.z, 0.15);
 }
@@ -1240,6 +1396,20 @@ function animatePeople(realDt) {
   au.group.position.y = 3.075 + (au.catchT > 0 ? Math.abs(Math.sin(time * 14)) * 0.1 : 0);
   syncRig(au);
   syncRig(v);
+  // the regulars at the chai tapri / sabzi cart: weight shifts, glances, an occasional sip
+  W.regulars.forEach((r, i) => {
+    resetPose(r);
+    const sip = Math.sin(time * 0.5 + i * 2.1) > 0.85;
+    r.torso.rotation.x = 0.03 + Math.sin(time * 1.4 + i) * 0.015;
+    r.armL.rotation.x = -0.6;
+    r.elbowL.rotation.x = -1.2;
+    r.armR.rotation.x = sip ? -1.9 : -0.4;
+    r.elbowR.rotation.x = sip ? -1.3 : -0.9;
+    r.legL.rotation.x = 0.08 + Math.sin(time * 0.7 + i) * 0.04;
+    r.head.rotation.y = Math.sin(time * 0.5 + i * 1.7) * 0.5;
+    r.head.rotation.x = sip ? -0.2 : 0;
+    syncRig(r);
+  });
   // kids on the kerb
   S.cheerT = Math.max(0, S.cheerT - realDt);
   W.kids.forEach((k, i) => {
@@ -1265,13 +1435,7 @@ function animatePeople(realDt) {
 let TPL = null; // real-model templates once loaded
 const riderPool = [];
 const traffic = { list: [], timer: rand(5, 9), noted: false };
-const VEHICLES = [
-  { kind: 'scooter', w: 3, speed: [8.5, 11], colors: [0x2f9ea0, 0xe8e0d0, 0xc0262d, 0x4a6fd6] },
-  { kind: 'bike', w: 3, speed: [10, 13], colors: [0xc0262d, 0x1b1b24, 0x2a5db0] },
-  { kind: 'auto', w: 2, speed: [6.5, 8.5], colors: [0xf2c230] },
-  { kind: 'cycle', w: 2, speed: [4.8, 6], colors: [0x2a5db0, 0xc0262d, 0x2a9d5c] },
-  { kind: 'car', w: 1.5, speed: [7, 9], colors: [0xd7d9e0, 0xb02a2a, 0x2a4d8f, 0x1b1b24] },
-];
+const VEHICLES = [{ kind: 'auto', w: 1, speed: [6.5, 8.5], colors: [0xf2c230] }]; // the real auto-rickshaw model is the only vehicle
 const _vt = new THREE.Vector3();
 const _vt2 = new THREE.Vector3();
 
@@ -1294,14 +1458,22 @@ function getRider() {
   return rig;
 }
 
+const VEH_TPL = {}; // real vehicle models, when present in public/models/vehicles/<kind>.glb
 function spawnVehicle() {
-  let r = Math.random() * VEHICLES.reduce((a, k) => a + k.w, 0);
-  let spec = VEHICLES[0];
-  for (const k of VEHICLES) {
+  const pool = VEHICLES.filter((k) => !k.glbOnly || VEH_TPL[k.kind]);
+  let r = Math.random() * pool.reduce((a, k) => a + k.w, 0);
+  let spec = pool[0];
+  for (const k of pool) {
     r -= k.w;
     if (r <= 0) { spec = k; break; }
   }
   const v = makeVehicle(spec.kind, pick(spec.colors));
+  if (VEH_TPL[spec.kind]) {
+    // swap the built-from-boxes body for the real model (riders keep their seat positions)
+    v.group.children.slice().forEach((c) => (c.visible = false));
+    v.group.add(cloneModel(VEH_TPL[spec.kind], { length: spec.len || v.len, yaw: spec.yaw || 0 }));
+    v.rider = false; // the real model brings its own driver
+  }
   const dir = Math.random() < 0.5 ? 1 : -1; // +1 drives towards the camera
   const x = spec.kind === 'cycle' ? pick([-3.6, 3.6]) : pick([-3.2, -1.6, 0, 1.8, 3.2]);
   const z = dir > 0 ? -40 : 17;
@@ -1329,6 +1501,7 @@ function removeVehicle(item) {
   if (item.snd) item.snd.stop();
   item.v.group.traverse((o) => {
     if (o.isMesh) {
+      if (o.userData.shared) return;
       o.geometry.dispose();
       if (o.material.isMeshBasicMaterial) o.material.dispose();
     } else if (o.isSprite) o.material.dispose();
@@ -1414,9 +1587,9 @@ function updateWalkers(dt) {
     }
     if (w.cross) {
       w.x += w.dir * w.speed * dt;
-      if (Math.abs(w.x) > 6.1) {
+      if (Math.abs(w.x) > C.HALF_W - 1.4) {
         w.dir = -Math.sign(w.x);
-        w.x = Math.sign(w.x) * 6.1;
+        w.x = Math.sign(w.x) * (C.HALF_W - 1.4);
         w.pause = rand(2, 5);
         w.z = rand(-44, -24);
       }
@@ -1539,6 +1712,12 @@ function animate(dt, realDt) {
   cow.tail.rotation.z = Math.sin(time * 3) * 0.4;
   legSwing(cow.legs, cp.x * 5, 0.32, 0.5);
   cow.head.rotation.z = Math.sin(time * 1.5) * 0.12;
+  if (cow.model) {
+    cow.model.update(dt, 'walk');
+    // static model: a gentle plodding bob and sway while it walks
+    cow.model.holder.position.y = Math.abs(Math.sin(cp.x * 4.5)) * 0.025;
+    cow.model.holder.rotation.z = Math.sin(cp.x * 4.5) * 0.015;
+  }
   if (cow.startle > 0) {
     cow.startle -= realDt;
     cow.group.position.y = Math.abs(Math.sin(time * 18)) * 0.12;
@@ -1560,6 +1739,7 @@ function animate(dt, realDt) {
 
   fireworks(realDt);
   updateParticles(dt);
+  updatePuffs(dt);
 
   // camera
   S.shake = Math.max(0, S.shake - realDt * 1.6);
@@ -1615,17 +1795,18 @@ function frame(now) {
 // ------------------------------------------------------------------ real human models (optional)
 // Drop rigged humanoid GLBs into public/models/people/ (man.glb, woman.glb). If they are missing the
 // procedural characters stay.
-loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', bowler: import.meta.env.BASE_URL + 'models/bowler/bowler.glb' }).then((t) => {
+loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', cow: import.meta.env.BASE_URL + 'models/animals/cow.glb', pole: import.meta.env.BASE_URL + 'models/props/pole.glb', ...Object.fromEntries(['auto'].map((k) => ['veh_' + k, import.meta.env.BASE_URL + `models/vehicles/${k}.glb`])) }, (p) => {
+  $('loadFill').style.width = Math.round(p * 100) + '%';
+  $('loadTxt').textContent = `LOADING THE GULLY… ${Math.round(p * 100)}%`;
+}).then((t) => {
   TPL = t;
   for (const p of W.people) {
-    // the batsman uses his own custom model, kept in its own outfit
-    if (p === W.bowler && t.bowler && dressRig(p, t.bowler, { kid: true, headScale: 1.1, height: 1 })) continue;
-    if (p === W.batter && t.batter && dressRig(p, t.batter, { kid: true, headScale: 1.1, height: 1 })) continue;
     const tpl = p.female ? t.female || t.male : t.male || t.female;
     if (!tpl) break;
     const isMale = tpl === t.male;
     dressRig(p, tpl, {
-      shirt: isMale ? p.opts.shirt : undefined,
+      shirt: isMale ? (p === W.batter ? 0xff7a1a : p === W.bowler ? 0xf4f4f0 : p.opts.shirt) : undefined, // batsman orange, bowler white
+      tshirt: p === W.bowler && isMale,
       pants: isMale ? p.opts.pants : undefined,
       shoe: isMale ? p.opts.shoe : undefined,
       skin: isMale ? pick(skinTints) : undefined,
@@ -1635,6 +1816,41 @@ loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female
       height: p.kid ? rand(0.96, 1.05) : rand(0.97, 1.04),
     });
   }
+  for (const k of ['auto']) if (t['veh_' + k]) VEH_TPL[k] = t['veh_' + k];
+  if (t.pole) {
+    // real electricity poles: each module is two poles with wires between them, rotated to run down the street
+    W.procPoles.visible = false;
+    const zs = W.poleZs;
+    const SC = 1.8;
+    for (let i = 0; i < zs.length - 1; i++) {
+      const mod = t.pole.clone(true);
+      mod.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true;
+        o.receiveShadow = true;
+        o.userData.shared = true;
+        // modules after the first start at the previous module's end pole: hide the duplicate first pole
+        if (i > 0) {
+          const bb = new THREE.Box3().setFromObject(o);
+          if (bb.getCenter(new THREE.Vector3()).x > -4.5 && bb.getSize(new THREE.Vector3()).x < 1) o.visible = false;
+        }
+      });
+      const holder = new THREE.Group();
+      holder.add(mod);
+      holder.scale.setScalar(SC);
+      holder.rotation.y = -Math.PI / 2;
+      holder.position.set(W.poleX, 0.16, zs[i]);
+      scene.add(holder);
+    }
+  }
+  if (t.cow) {
+    const a = makeAnimal(t.cow, { length: 1.8, yaw: -Math.PI / 2 });
+    if (a) {
+      W.cow.group.children.slice().forEach((c) => (c.visible = false));
+      W.cow.group.add(a.holder);
+      W.cow.model = a;
+    }
+  }
   if (t.dog) {
     const a = makeAnimal(t.dog, { length: 0.95, yaw: Math.PI / 2 });
     if (a) {
@@ -1643,9 +1859,13 @@ loadTemplates({ male: import.meta.env.BASE_URL + 'models/people/man.glb', female
       W.dog.model = a;
     }
   }
+}).finally(() => {
+  $('loader').classList.add('done');
+  $('play').disabled = false;
 });
 
 // ------------------------------------------------------------------ boot
+rollMatch();
 buildDots();
 refreshHud();
 $('muteBtn').addEventListener('pointerdown', (e) => {
@@ -1656,16 +1876,83 @@ $('muteBtn').addEventListener('pointerdown', (e) => {
 });
 $('play').addEventListener('click', () => { unlockAudio(); startGame(); });
 $('again').addEventListener('click', () => { unlockAudio(); startGame(); });
+// ------------------------------------------------------------------ share card
+const rrect = (c, x, y, w, h, r) => {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+};
+async function makeShareCard() {
+  try { await document.fonts.load("60px 'Bungee'"); await document.fonts.load("700 30px 'Baloo 2'"); } catch { /* fonts optional */ }
+  renderer.render(scene, camera); // same tick, so the canvas still holds the frame
+  const img = new Image();
+  img.src = canvas.toDataURL('image/jpeg', 0.92);
+  await img.decode().catch(() => {});
+  const CW = 1080, CH = 1350;
+  const cv = document.createElement('canvas');
+  cv.width = CW; cv.height = CH;
+  const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, CH);
+  g.addColorStop(0, '#2a0f6b'); g.addColorStop(0.55, '#140a33'); g.addColorStop(1, '#4a0f3a');
+  c.fillStyle = g; c.fillRect(0, 0, CW, CH);
+  c.textAlign = 'center';
+  c.font = "64px 'Bungee', Impact, sans-serif";
+  c.fillStyle = '#ffc233'; c.shadowColor = '#ff3d8b'; c.shadowBlur = 24;
+  c.fillText('GULLY CRICKET', CW / 2, 96);
+  c.fillStyle = '#ff3d8b'; c.fillText('CHAOS', CW / 2, 164);
+  c.shadowBlur = 0;
+  // the game frame, cropped to fill a rounded window
+  const fx = 60, fy = 200, fw = CW - 120, fh = 640;
+  c.save(); rrect(c, fx, fy, fw, fh, 36); c.clip();
+  if (img.width) {
+    const k = Math.max(fw / img.width, fh / img.height);
+    c.drawImage(img, fx + (fw - img.width * k) / 2, fy + (fh - img.height * k) / 2, img.width * k, img.height * k);
+  }
+  c.restore();
+  c.lineWidth = 8; c.strokeStyle = '#fff'; rrect(c, fx, fy, fw, fh, 36); c.stroke();
+  c.fillStyle = '#fff';
+  c.font = "190px 'Bungee', Impact, sans-serif";
+  c.fillText(String(S.score), CW / 2, 1030);
+  c.font = "46px 'Bungee', Impact, sans-serif";
+  c.fillStyle = '#2de2c8';
+  c.fillText(S.score === 1 ? 'RUN' : 'RUNS', CW / 2, 1090);
+  c.fillStyle = '#ffc233';
+  c.font = "700 44px 'Baloo 2', sans-serif";
+  c.fillText($('overTitle').textContent, CW / 2, 1160);
+  c.fillStyle = '#cbb8ff';
+  c.font = "700 34px 'Baloo 2', sans-serif";
+  c.fillText(`${$('overTag').textContent}  •  Target ${S.target} in ${MAX_BALLS} balls, ${MAX_WKTS} wickets`, CW / 2, 1212);
+  c.fillStyle = '#fff';
+  c.font = "700 36px 'Baloo 2', sans-serif";
+  c.fillText('Can you beat me? 🏏  ' + location.host + location.pathname.replace(/\/$/, ''), CW / 2, 1290);
+  return new Promise((res) => cv.toBlob(res, 'image/png'));
+}
 $('share').addEventListener('click', async () => {
-  const text = `I scored ${S.score} runs in Gully Cricket Chaos! 🏏 Window tod ke OUT hua kya? Beat me: ${location.href}`;
+  const text = `I scored ${S.score} runs in Gully Cricket Chaos! 🏏 Can you beat me? ${location.href}`;
+  const btn = $('share');
+  btn.textContent = '…';
   try {
-    if (navigator.share) await navigator.share({ text });
-    else {
-      await navigator.clipboard.writeText(text);
-      $('share').textContent = 'COPIED!';
-      setTimeout(() => ($('share').textContent = 'SHARE'), 1500);
+    const blob = await makeShareCard();
+    const file = blob && new File([blob], 'gully-cricket-chaos.png', { type: 'image/png' });
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text });
+    } else if (blob) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'gully-cricket-chaos.png';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      try { await navigator.clipboard.writeText(text); } catch { /* clipboard optional */ }
+      btn.textContent = 'SAVED!';
+      setTimeout(() => (btn.textContent = 'SHARE'), 1600);
+      return;
     }
   } catch { /* user cancelled */ }
+  btn.textContent = 'SHARE';
 });
 requestAnimationFrame(frame);
-window.__game = { S, ball, W, camera, spawnVehicle, traffic, renderer }; // handy for debugging in the console
+window.__game = { S, ball, W, camera, spawnVehicle, traffic, renderer, makeShareCard }; // handy for debugging in the console

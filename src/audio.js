@@ -199,6 +199,15 @@ export const sfx = {
     tone({ type: 'square', f0: 277, f1: 277, dur: 0.18, vol: 0.18, delay: 0.2 });
     tone({ type: 'square', f0: 220, f1: 220, dur: 0.4, vol: 0.18, delay: 0.4 });
   },
+  slurp() {
+    noise({ dur: 0.55, vol: 0.12, hp: 900, lp: 3500, swell: 0.4 });
+    tone({ type: 'sine', f0: 700, f1: 1100, dur: 0.5, vol: 0.03, vib: 18 });
+  },
+  power() {
+    tone({ type: 'triangle', f0: 330, f1: 660, dur: 0.18, vol: 0.2 });
+    tone({ type: 'triangle', f0: 440, f1: 880, dur: 0.18, vol: 0.2, delay: 0.13 });
+    tone({ type: 'triangle', f0: 660, f1: 1320, dur: 0.4, vol: 0.22, delay: 0.26 });
+  },
   tick() {
     tone({ type: 'square', f0: 900, f1: 900, dur: 0.04, vol: 0.08 });
   },
@@ -480,7 +489,7 @@ export function makeEngine(kind) {
         src = ctx.createBufferSource();
         const g = ctx.createGain();
         src.buffer = passBuf;
-        g.gain.value = muted ? 0 : 1;
+        g.gain.value = muted ? 0 : 2.6;
         src.connect(g).connect(master);
         src.start();
       },

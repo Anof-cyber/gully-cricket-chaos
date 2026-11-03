@@ -3,7 +3,7 @@ import * as THREE from 'three';
 // Layout constants shared with the game logic. The street runs along the Z axis:
 // bowler far away at -Z, batter near the camera at +Z.
 export const C = {
-  HALF_W: 7, // houses start here; the ball bounces off them
+  HALF_W: 11, // houses start here; the ball bounces off them. Lane is +-5.5, footpaths run from 5.5 to here
   BOWL_Z: -8.2,
   BAT_X: -0.75,
   BAT_Z: 5.95,
@@ -849,8 +849,8 @@ export function buildWorld(scene) {
     }
   });
   roadTex.wrapS = roadTex.wrapT = THREE.RepeatWrapping;
-  roadTex.repeat.set(1.6, 7);
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(14, 80), new THREE.MeshLambertMaterial({ map: roadTex }));
+  roadTex.repeat.set(1.6 * ((C.HALF_W * 2) / 14), 7);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(C.HALF_W * 2, 80), new THREE.MeshLambertMaterial({ map: roadTex }));
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, 0, -23);
   road.receiveShadow = true;
@@ -867,7 +867,7 @@ export function buildWorld(scene) {
   kerbTex.wrapS = kerbTex.wrapT = THREE.RepeatWrapping;
   kerbTex.repeat.set(1, 40);
   for (const s of [-1, 1]) {
-    box(1.5, 0.16, 80, 0x8a7a9a, s * 6.25, 0.08, -23, scene, { shadow: false });
+    box(C.HALF_W - 5.5, 0.16, 80, 0x8a7a9a, s * (5.5 + (C.HALF_W - 5.5) / 2), 0.08, -23, scene, { shadow: false });
     const edge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 80), new THREE.MeshLambertMaterial({ map: kerbTex }));
     edge.position.set(s * 5.5, 0.1, -23);
     scene.add(edge);
@@ -892,7 +892,7 @@ export function buildWorld(scene) {
   chalk(5.1, 2.8);
   chalk(-9.7, 2.8);
   // boundary: a dotted line of marigold petals
-  for (let x = -5.4; x <= 5.4; x += 0.7) chalk(C.BOUNDARY_Z, 0.34, 0.12, x % 1.4 < 0.7 ? 0xffc233 : 0xff7a1a, x, 1);
+  for (let x = -(C.HALF_W - 0.5); x <= C.HALF_W - 0.5; x += 0.7) chalk(C.BOUNDARY_Z, 0.34, 0.12, x % 1.4 < 0.7 ? 0xffc233 : 0xff7a1a, x, 1);
 
   // ---- diyas (clay lamps) along the kerbs, around the rangoli and as crease markers
   const diyaPos = [];
@@ -1065,24 +1065,72 @@ export function buildWorld(scene) {
 
   // chai tapri + chaiwala
   const tea = makeTeaCart();
-  tea.position.set(-5.9, 0.16, -6.6);
+  tea.position.set(-6.9, 0.16, -6.6);
   tea.rotation.y = Math.PI / 2;
   scene.add(tea);
   W.tea = tea;
   const vendor = makePerson({ shirt: 0x6a994e, accent: 0xffffff, pants: 0x3a3a3a, skin: 0xa86f43, hair: 0xdddddd, scale: 0.95, style: 'short' });
-  vendor.group.position.set(-6.5, 0.16, -6.6);
+  vendor.group.position.set(-7.7, 0.16, -6.6);
   vendor.group.rotation.y = Math.PI / 2;
   scene.add(vendor.group);
   W.vendor = vendor;
   W.people.push(vendor);
 
+  // ---- the wider footpaths: chai-stall bench + regulars, a sabzi cart, a small shrine, plants
+  W.regulars = [];
+  const regular = (x, z, rotY, shirt, pants) => {
+    const r = makePerson({ shirt, accent: 0xffffff, pants, skin: pick([0xc68a5c, 0xb07a4d, 0xd9a273]), hair: 0x1b1410, scale: rnd(0.97, 1.03), style: pick(['short', 'spiky']) });
+    r.group.position.set(x, 0.16, z);
+    r.group.rotation.y = rotY;
+    scene.add(r.group);
+    W.people.push(r);
+    W.regulars.push(r);
+    return r;
+  };
+  // bench beside the chai tapri
+  box(0.5, 0.08, 1.7, 0x7a4a24, -8.7, 0.7, -3.9, scene);
+  for (const dz of [-0.7, 0.7]) box(0.08, 0.55, 0.4, 0x5a3818, -8.7, 0.42, -3.9 + dz, scene);
+  box(0.08, 0.55, 1.7, 0x7a4a24, -8.95, 1.0, -3.9, scene);
+  regular(-7.6, -4.4, Math.PI / 2 + 0.3, 0xd9a441, 0x2f3550);
+  regular(-7.7, -5.4, Math.PI / 2 - 0.4, 0x7fc6a4, 0x4a3c30);
+  // sabzi / fruit cart on the right
+  const sabzi = new THREE.Group();
+  sabzi.position.set(7.4, 0.16, -2.2);
+  sabzi.rotation.y = -Math.PI / 2;
+  box(1.8, 0.7, 1.0, 0x6b8e4e, 0, 0.62, 0, sabzi);
+  box(1.9, 0.07, 1.1, 0xc98a4b, 0, 1.0, 0, sabzi);
+  for (const z of [0.6, -0.6]) cyl(0.42, 0.42, 0.1, 0x222222, 0, 0.42, z, sabzi).rotation.x = Math.PI / 2;
+  for (let i = 0; i < 8; i++) box(0.26, 0.05, 1.5, i % 2 ? 0xffffff : 0x2a9d5c, -0.9 + i * 0.26, 2.2 - Math.abs(i - 3.5) * 0.04, 0, sabzi);
+  for (const [x, z] of [[-0.85, -0.55], [0.85, -0.55], [-0.85, 0.55], [0.85, 0.55]]) box(0.05, 1.25, 0.05, 0x555555, x, 1.62, z, sabzi);
+  const heap = [0xe63946, 0xff9f1c, 0x2a9d5c, 0xf4d35e];
+  for (let i = 0; i < 4; i++) for (let k = 0; k < 7; k++) sph(0.1, heap[i], -0.7 + i * 0.47 + rnd(-0.12, 0.12), 1.12 + rnd(0, 0.12), rnd(-0.32, 0.32), sabzi, { rough: 0.6 });
+  scene.add(sabzi);
+  regular(8.4, -2.2, -Math.PI / 2, 0xe36bae, 0x7a2c4e);
+  // roadside shrine with marigolds, against the right wall
+  const shrine = new THREE.Group();
+  shrine.position.set(C.HALF_W - 0.5, 0.16, -19);
+  box(0.9, 1.1, 1.0, 0xe7d8b8, 0, 0.55, 0, shrine);
+  box(0.95, 0.12, 1.1, 0xc0392b, 0, 1.15, 0, shrine);
+  mk(new THREE.ConeGeometry(0.5, 0.55, 4), T(0xffc233), 0, 1.5, 0, shrine, { outline: 0 });
+  box(0.4, 0.4, 0.5, 0x6a2c3e, -0.2, 0.7, 0, shrine);
+  for (let i = 0; i < 9; i++) sph(0.08, i % 2 ? 0xff9f1c : 0xffc233, -0.52, 0.35 + i * 0.07, -0.4 + i * 0.1, shrine, { rough: 0.7 });
+  scene.add(shrine);
+  // plants in pots along the footpaths
+  for (const [x, z] of [[-9.6, -10], [-9.6, 2], [9.6, 3], [9.6, -9.5], [9.5, -24], [-9.6, -25]]) {
+    const pot = new THREE.Group();
+    pot.position.set(x, 0.16, z);
+    cyl(0.28, 0.2, 0.42, 0xb5523b, 0, 0.21, 0, pot);
+    for (let i = 0; i < 6; i++) sph(0.2, 0x2f8f4e, rnd(-0.12, 0.12), 0.62 + i * 0.11, rnd(-0.12, 0.12), pot, { rough: 0.8 });
+    scene.add(pot);
+  }
+
   const scooter = makeScooter(0x2de2c8);
-  scooter.position.set(5.7, 0.16, -10.2);
+  scooter.position.set(7.0, 0.16, -10.2);
   scooter.rotation.y = -0.1;
   scene.add(scooter);
   W.scooter = scooter;
   const scooter2 = makeScooter(0xff3d8b);
-  scooter2.position.set(-5.9, 0.16, -14);
+  scooter2.position.set(-8.6, 0.16, -16);
   scooter2.rotation.y = Math.PI + 0.1;
   scene.add(scooter2);
 
@@ -1133,25 +1181,32 @@ export function buildWorld(scene) {
     scene.add(g);
     return g;
   };
-  const LX = -6.0; // power line runs down the left kerb
-  elecPole(LX, 9, {});
-  elecPole(LX, -3, { lamp: true });
-  elecPole(LX, -10.9, {});
-  elecPole(LX, -12.7, {});
-  elecPole(LX, -26, { lamp: true });
-  for (const [x, z] of [[6.2, -3], [6.2, -26], [6.2, 8]]) elecPole(x, z, { lamp: true, arm: false });
+  const LX = -6.6; // power line runs down the left footpath
+  const POLE_ZS = [6.2, -11.8, -29.8, -47.8]; // 18 m spans; the transformer rides on the pole at -11.8
+  W.poleZs = POLE_ZS;
+  W.poleX = LX;
+  // built-from-boxes poles + wires: only shown when the real pole model is missing
+  const procPoles = new THREE.Group();
+  scene.add(procPoles);
+  W.procPoles = procPoles;
+  const addTo = scene.add.bind(scene);
+  scene.add = (o) => procPoles.add(o); // route the next helper calls into the fallback group
+  for (const z of POLE_ZS) elecPole(LX, z, {});
   for (const dx of [-0.85, 0, 0.85]) {
-    for (const [z0, z1, sag] of [[9, -3, 0.55], [-3, -10.9, 0.5], [-10.9, -12.7, 0.05], [-12.7, -26, 0.6], [-26, -45, 0.8]]) {
-      cable(new THREE.Vector3(LX + dx, 8.86, z0), new THREE.Vector3(LX + dx, 8.86, z1), sag);
-    }
+    for (let i = 0; i < POLE_ZS.length - 1; i++) cable(new THREE.Vector3(LX + dx, 8.86, POLE_ZS[i]), new THREE.Vector3(LX + dx, 8.86, POLE_ZS[i + 1]), 0.7);
   }
-  // H-frame transformer between the two poles at z=-10.9 / -12.7 (low and big so it can really be hit)
-  const tz = -11.8;
-  const ty = 3.9;
-  for (const y of [3.2, 5.4]) part(new THREE.BoxGeometry(0.14, 0.14, 1.9), 0x3a3446, LX, y, tz, scene);
-  part(new THREE.BoxGeometry(1.1, 0.1, 1.5), 0x3a3446, LX, 3.2, tz, scene); // platform
+  scene.add = addTo;
+  // street lamps (always shown)
+  for (const z of [-3.5, -21]) elecPole(LX - 0.4, z, { lamp: true, arm: false });
+  for (const [x, z] of [[6.4, -3], [6.4, -26], [6.4, 8]]) elecPole(x, z, { lamp: true, arm: false });
+  // transformer on the pole at z=-11.8: bracket off the pole, tank hanging over the lane edge
+  const tz = POLE_ZS[1];
+  const ty = 4.3;
+  const TX = LX + 0.95;
+  part(new THREE.BoxGeometry(1.0, 0.14, 1.3), 0x3a3446, LX + 0.5, 3.45, tz, scene); // platform
+  for (const dz of [-0.55, 0.55]) part(new THREE.BoxGeometry(0.1, 1.9, 0.1), 0x3a3446, LX + 0.9, 4.4, tz + dz, scene);
   const trafo = new THREE.Group();
-  trafo.position.set(LX, ty, tz);
+  trafo.position.set(TX, ty, tz);
   part(new THREE.CylinderGeometry(0.52, 0.52, 1.15, 24), 0x56685a, 0, 0, 0, trafo, { rough: 0.6 });
   for (let i = -2; i <= 2; i++) part(new THREE.TorusGeometry(0.53, 0.03, 6, 24), 0x3d4a40, 0, i * 0.24, 0, trafo, { rx: Math.PI / 2, rough: 0.6 });
   part(new THREE.CylinderGeometry(0.5, 0.52, 0.1, 24), 0x2f3a32, 0, 0.62, 0, trafo, { rough: 0.6 });
@@ -1161,10 +1216,10 @@ export function buildWorld(scene) {
   plate.rotation.y = Math.PI / 2;
   trafo.add(plate);
   scene.add(trafo);
-  for (const [dz, dx] of [[-0.28, -0.85], [0, 0], [0.28, 0.85]]) {
-    cable(new THREE.Vector3(LX, ty + 1.05, tz + dz), new THREE.Vector3(LX + dx, 8.8, -10.9), 0.15);
+  for (const [dz, dx] of [[-0.28, -0.99], [0, 0], [0.28, 0.99]]) {
+    cable(new THREE.Vector3(TX, ty + 1.05, tz + dz), new THREE.Vector3(LX + dx, 6.7, tz), 0.2);
   }
-  W.transformerPos = new THREE.Vector3(LX, ty, tz);
+  W.transformerPos = new THREE.Vector3(TX, ty, tz);
   glowPts.length && void 0;
 
   // ---- string lights + paper lanterns across the street
@@ -1183,8 +1238,8 @@ export function buildWorld(scene) {
     }
   };
   for (const z of [-22, -11, 0, 10]) {
-    strand(new THREE.Vector3(-6.9, 7.2, z), new THREE.Vector3(6.9, 7.2, z), 1.0, 30);
-    for (const sx of [-1, 1]) box(0.14, 0.14, 0.14, 0x2a2238, sx * 6.95, 7.2, z, scene, { shadow: false }); // wall hooks
+    strand(new THREE.Vector3(-(C.HALF_W - 0.1), 7.2, z), new THREE.Vector3(C.HALF_W - 0.1, 7.2, z), 1.4, 48);
+    for (const sx of [-1, 1]) box(0.14, 0.14, 0.14, 0x2a2238, sx * (C.HALF_W - 0.05), 7.2, z, scene, { shadow: false }); // wall hooks
   }
   const bulbMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.075, 6, 5), new THREE.MeshBasicMaterial({ color: 0xffffff }), bulbs.length);
   bulbs.forEach((p, i) => {
@@ -1199,7 +1254,7 @@ export function buildWorld(scene) {
   // paper-star lanterns (aakash kandil)
   const lanternCols = [0xff3d8b, 0xffc233, 0x2de2c8, 0xff7a1a, 0x9b7bff];
   const lanternPos = [];
-  for (const z of [-22, -11, 0, 10]) for (const x of [-4.2, -1.4, 1.4, 4.2]) lanternPos.push([x, 7.2 - 1.0 * Math.sin(((x + 6.9) / 13.8) * Math.PI) - 0.85, z]);
+  for (const z of [-22, -11, 0, 10]) for (const x of [-8.4, -5.6, -2.8, 0, 2.8, 5.6, 8.4]) lanternPos.push([x, 7.2 - 1.4 * Math.sin(((x + C.HALF_W - 0.1) / (2 * C.HALF_W - 0.2)) * Math.PI) - 0.85, z]);
   const lanterns = new THREE.InstancedMesh(new THREE.OctahedronGeometry(0.3, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), lanternPos.length);
   const sm = new THREE.Matrix4();
   lanternPos.forEach((p, i) => {
@@ -1208,7 +1263,7 @@ export function buildWorld(scene) {
     const col = pick(lanternCols);
     lanterns.setColorAt(i, new THREE.Color(col));
     addGlow(p[0], p[1], p[2], col);
-    const wire = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p[0], p[1] + 0.45, p[2]), new THREE.Vector3(p[0], 7.2 - 1.0 * Math.sin(((p[0] + 6.9) / 13.8) * Math.PI), p[2])]), new THREE.LineBasicMaterial({ color: 0x120a22 }));
+    const wire = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(p[0], p[1] + 0.45, p[2]), new THREE.Vector3(p[0], 7.2 - 1.4 * Math.sin(((p[0] + C.HALF_W - 0.1) / (2 * C.HALF_W - 0.2)) * Math.PI), p[2])]), new THREE.LineBasicMaterial({ color: 0x120a22 }));
     scene.add(wire);
   });
   scene.add(lanterns);
@@ -1225,12 +1280,13 @@ export function buildWorld(scene) {
   // ---- festival gate closing the street
   const gate = new THREE.Group();
   gate.position.set(0, 0, C.END_Z + 3);
+  const GX = C.HALF_W - 2.4;
   for (const s of [-1, 1]) {
-    box(1.8, 11, 1.8, 0xe7a92f, s * 4.6, 5.5, 0, gate);
-    box(2.2, 0.5, 2.2, 0xfff3d6, s * 4.6, 11.2, 0, gate);
-    mk(new THREE.SphereGeometry(1.1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), T(0xffc233), s * 4.6, 11.4, 0, gate, { outline: 0 });
+    box(1.8, 11, 1.8, 0xe7a92f, s * GX, 5.5, 0, gate);
+    box(2.2, 0.5, 2.2, 0xfff3d6, s * GX, 11.2, 0, gate);
+    mk(new THREE.SphereGeometry(1.1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), T(0xffc233), s * GX, 11.4, 0, gate, { outline: 0 });
   }
-  box(11.4, 1.5, 1.8, 0xe0628f, 0, 10.2, 0, gate);
+  box(GX * 2 + 1.8, 1.5, 1.8, 0xe0628f, 0, 10.2, 0, gate);
   mk(new THREE.SphereGeometry(2.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), T(0xffc233), 0, 11, 0, gate, { outline: 0 });
   const gsign = signMesh('MOHALLA CHOWK', { w: 6.4, h: 1.2, bg: '#1b1230', fg: '#ffc233', size: 100, border: '#ffc233' });
   gsign.position.set(0, 10.2, 0.92);
@@ -1239,13 +1295,13 @@ export function buildWorld(scene) {
   addGlow(0, 10.2, C.END_Z + 4.5, 0xffc233);
   gGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPts, 3));
   gGeo.setAttribute('color', new THREE.Float32BufferAttribute(glowCols, 3));
-  const wall = box(30, 16, 2, 0x2a1a50, 0, 8, C.END_Z - 1, scene);
+  const wall = box(46, 16, 2, 0x2a1a50, 0, 8, C.END_Z - 1, scene);
   void wall;
 
   // ---- people on the sidelines
   W.kids = [];
   const kidDefs = [
-    { x: -6.2, z: -9, s: 0xffd23f }, { x: 6.2, z: -6.8, s: 0x38bdf8 }, { x: -6.2, z: -17.5, s: 0xf472b6 }, { x: 6.2, z: -14, s: 0x4ade80 },
+    { x: -7.4, z: -9, s: 0xffd23f }, { x: 7.4, z: -6.8, s: 0x38bdf8 }, { x: -7.6, z: -18.5, s: 0xf472b6 }, { x: 7.6, z: -14, s: 0x4ade80 },
   ];
   for (const k of kidDefs) {
     const kid = makePerson({ shirt: k.s, pants: 0x3a3f5c, skin: pick([0xc68a5c, 0xa8743f, 0xd9a273]), hair: 0x1b1410, scale: 0.7, outline: false, shorts: true, style: pick(['short', 'spiky', 'pony']) });
@@ -1269,7 +1325,7 @@ export function buildWorld(scene) {
     scene.add(rig.group);
     W.people.push(rig);
     const cross = i >= 6;
-    W.walkers.push({ rig, cross, dir: Math.random() < 0.5 ? 1 : -1, speed: rnd(1.0, 1.5), x: (i % 2 ? 1 : -1) * rnd(5.8, 6.3), z: rnd(-45, 12), phase: rnd(0, 6), pause: 0 });
+    W.walkers.push({ rig, cross, dir: Math.random() < 0.5 ? 1 : -1, speed: rnd(1.0, 1.5), x: (i % 2 ? 1 : -1) * rnd(6.4, 9.2), z: rnd(-45, 12), phase: rnd(0, 6), pause: 0 });
   });
 
   // ---- fielders
