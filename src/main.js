@@ -32,11 +32,21 @@ const SW_DUR = 0.26; // swing length
 const SW_CONTACT = 0.12; // moment the bat reaches the contact point
 const REACH = 1.35;
 const DRINK_LEN = 2.7; // seconds of the chai-drinking animation
+const BAT_MIN = -2.1; // furthest the batsman can shuffle left / right
+const BAT_MAX = 1.1;
+const MOVE_SPEED = 3.1;
+const CONTACT_OFF = 0.45; // bat contact point sits this far right of the batsman
+const contactX = () => S.batX + CONTACT_OFF;
 const RUNUP = 0.85; // underarm wind-up + delivery (no run-up)
 
 // ------------------------------------------------------------------ state
 const S = {
   intro: 0,
+  batX: -0.75, // batsman's position along the crease
+  moveDir: 0, // -1 / 0 / +1 while a move button or key is held
+  batVel: 0,
+  landX: 0, // where this delivery will pitch (for the aim ring)
+  arriveX: 0, // where it will reach the bat
   mode: 'menu', // menu | ready | runup | bowling | live | result | over
   t: 0,
   score: 0,
@@ -258,7 +268,7 @@ function setLoft(v) {
   el.loftBtn.classList.toggle('loft', v);
   document.body.classList.toggle('loft', v);
   if (changed && playing()) {
-    floater(v ? '🚀' : '🏏', new THREE.Vector3(C.BAT_X, 2.7, C.BAT_Z), 1.1);
+    floater(v ? '🚀' : '🏏', new THREE.Vector3(S.batX, 2.7, C.BAT_Z), 1.1);
     sfx.tick();
   }
 }
@@ -320,11 +330,28 @@ function drinkChai() {
   sfx.tick();
   refreshHud();
 }
+for (const [id, d] of [['moveL', -1], ['moveR', 1]]) {
+  const b = $(id);
+  const down = (e) => { e.preventDefault(); unlockAudio(); b.setPointerCapture?.(e.pointerId); b.classList.add('held'); S.moveDir = d; };
+  const up = () => { b.classList.remove('held'); if (S.moveDir === d) S.moveDir = keysDown.has(-d) ? -d : 0; };
+  b.addEventListener('pointerdown', down);
+  b.addEventListener('pointerup', up);
+  b.addEventListener('pointercancel', up);
+  b.addEventListener('lostpointercapture', up);
+}
 el.chaiBtn.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   unlockAudio();
   drinkChai();
 });
+const keysDown = new Set(); // held move keys (-1 left, +1 right)
+window.addEventListener('keyup', (e) => {
+  const d = e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : e.code === 'ArrowRight' || e.code === 'KeyD' ? 1 : 0;
+  if (!d) return;
+  keysDown.delete(d);
+  S.moveDir = keysDown.has(1) ? 1 : keysDown.has(-1) ? -1 : 0;
+});
+window.addEventListener('blur', () => { keysDown.clear(); S.moveDir = 0; });
 window.addEventListener('keydown', (e) => {
   unlockAudio();
   if (e.repeat) return;
@@ -334,8 +361,10 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   switch (e.code) {
-    case 'ArrowLeft': case 'KeyA': shot(-0.85); break;
-    case 'ArrowRight': case 'KeyD': shot(0.85); break;
+    case 'ArrowLeft': case 'KeyA': e.preventDefault(); keysDown.add(-1); S.moveDir = -1; break;
+    case 'ArrowRight': case 'KeyD': e.preventDefault(); keysDown.add(1); S.moveDir = 1; break;
+    case 'KeyQ': shot(-0.85); break;
+    case 'KeyE': shot(0.85); break;
     case 'ArrowUp': case 'KeyW': case 'Space': e.preventDefault(); shot(0); break;
     case 'ShiftLeft': case 'ShiftRight': case 'KeyL': case 'ArrowDown': case 'KeyS': e.preventDefault(); setLoft(!S.lofted); break;
   }
@@ -373,7 +402,7 @@ function makeDelivery() {
   }
   const vz = rand(k.vz[0], k.vz[1]) * (1 + 0.12 * lvl);
   const spinx = k.spin ? rand(2.5, 3.8) * (Math.random() < 0.5 ? -1 : 1) : 0;
-  return { ...k, vzv: vz, spinx, tx: Math.random() < 0.45 ? rand(-0.25, 0.25) : rand(-0.9, 1.0) };
+  return { ...k, vzv: vz, spinx, tx: Math.random() < 0.4 ? rand(-0.2, 0.3) : rand(-1.5, 1.4) };
 }
 
 function releaseBall() {
@@ -418,6 +447,8 @@ function newGameState() {
   S.calledOff = false;
   W.setPower(true);
   document.body.classList.remove('blackout');
+  S.batX = C.BAT_X;
+  S.moveDir = 0;
   S.score = 0;
   S.wkts = 0;
   S.ballNo = 0;
@@ -437,7 +468,7 @@ function startGame() {
   el.menu.classList.add('hidden');
   el.over.classList.add('hidden');
   newGameState();
-  el.hint.textContent = touchy ? 'SWIPE to hit  •  ← leg  ↑ straight  → off  •  tap LOFT for big shots' : 'FLICK the mouse or press ← ↑ → (A W D) to hit  •  SHIFT / L = LOFT';
+  el.hint.textContent = touchy ? '◀ ▶ slide under the ball  •  SWIPE to hit  •  ← leg  ↑ straight  → off' : '← → move on the crease  •  FLICK the mouse or Q ↑ E to hit  •  SHIFT / L = LOFT';
   el.hint.classList.add('show');
   setTimeout(() => el.hint.classList.remove('show'), 9000);
   nextBall();
@@ -557,7 +588,7 @@ function resolveHit() {
   S.swing.resolved = true;
   sfx.swish();
   if (S.mode !== 'bowling' || ball.hit) return;
-  const dx = (ball.pos.x - C.CONTACT.x) * 0.8;
+  const dx = (ball.pos.x - contactX()) * 0.8;
   const dy = (ball.pos.y - C.CONTACT.y) * 0.7;
   const dz = ball.pos.z - C.CONTACT.z;
   const d = Math.hypot(dx, dy, dz);
@@ -566,7 +597,15 @@ function resolveHit() {
 }
 
 let gradeTimer = 0;
-function showGrade(q, dz) {
+function shotName(yaw, lofted) {
+  const a = Math.abs(yaw);
+  let n;
+  if (a < 0.12) n = 'STRAIGHT DRIVE';
+  else if (yaw < 0) n = a < 0.4 ? 'ON DRIVE' : a < 0.75 ? 'FLICK' : 'PULL';
+  else n = a < 0.4 ? 'OFF DRIVE' : a < 0.75 ? 'COVER DRIVE' : 'CUT';
+  return lofted ? 'LOFTED ' + n.replace(' DRIVE', '') : n;
+}
+function showGrade(q, dz, name = '') {
   const g = el.grade;
   let text;
   let cls;
@@ -576,7 +615,7 @@ function showGrade(q, dz) {
   else { text = dz < 0 ? 'TOO EARLY' : 'TOO LATE'; cls = 'bad'; }
   g.className = '';
   void g.offsetWidth;
-  g.textContent = text;
+  g.textContent = name && q > 0.2 ? `${text}  •  ${name}` : text;
   g.className = `show ${cls}`;
   clearTimeout(gradeTimer);
   gradeTimer = setTimeout(() => (g.className = ''), 1100);
@@ -614,12 +653,13 @@ function hitBall(q, dz) {
     return;
   }
 
-  let yaw = S.aimYaw + clamp(ball.pos.x, -1, 1) * 0.15 - dz * 0.1 + (1 - q) * rand(-0.35, 0.35);
+  // the swipe direction IS the shot; only a mistimed shot drifts a little (early = pulled across, late = pushed off)
+  let yaw = S.aimYaw + clamp(-dz * 0.1, -0.12, 0.12) + (q < 0.55 ? (0.55 - q) * rand(-0.35, 0.35) : 0);
   if (chai) yaw = clamp(yaw, -0.2, 0.2); // keep it inside the gully walls
   const perfect = q > 0.85;
   const speed = (lofted ? 11 + q * 16 : 8 + q * 17) * (perfect ? 1.08 : 1);
   const vy = lofted ? 4 + 8 * (0.5 + 0.5 * q) : 0.5 + rand(0, 1.3);
-  showGrade(q, dz);
+  showGrade(q, dz, shotName(yaw, lofted));
   ball.vel.set(Math.sin(yaw) * speed, vy, -Math.cos(yaw) * speed);
   assignChaser();
   sfx.bat(q);
@@ -700,6 +740,14 @@ function stepBall(h) {
 function step(h) {
   S.t += h;
 
+  // shuffle along the crease (not once the swing has started)
+  if (S.mode === 'ready' || S.mode === 'runup' || S.mode === 'bowling') {
+    const want = S.swing.on || S.intro > S.t ? 0 : S.moveDir;
+    const nx = clamp(S.batX + want * MOVE_SPEED * h, BAT_MIN, BAT_MAX);
+    S.batVel = lerp(S.batVel, (nx - S.batX) / h, 0.2);
+    S.batX = nx;
+  } else S.batVel = 0;
+
   // swing clock
   if (S.swing.on) {
     S.swing.t += h;
@@ -714,12 +762,13 @@ function step(h) {
         pop('☕ CHAI POWER!', 'six');
         sub('Agli 3 gend = SIX! Bas bat ghumao!', 2400);
         sfx.power();
-        burst(new THREE.Vector3(C.BAT_X, 1.4, C.BAT_Z), [0xffd23f, 0xff8a1f, 0xff3b30], 50, 5, { up: 3, size: 0.1, life: 1.2, grav: 0.4 });
+        burst(new THREE.Vector3(S.batX, 1.4, C.BAT_Z), [0xffd23f, 0xff8a1f, 0xff3b30], 50, 5, { up: 3, size: 0.1, life: 1.2, grav: 0.4 });
         refreshHud();
       }
       if (S.t > Math.max(1.1, S.intro, S.holdUntil) && !trafficBlocks()) {
         S.mode = 'runup';
         S.t = 0;
+        predictLine();
         el.kind.textContent = S.delivery.name;
         el.kind.classList.add('show');
         sfx.tick();
@@ -758,7 +807,7 @@ function step(h) {
 function bowlingEvents() {
   const p = ball.pos;
   // pads
-  if (p.z > C.BAT_Z - 0.5 && p.z < C.BAT_Z + 0.5 && p.x > -1.0 && p.x < -0.28 && p.y < 0.95) {
+  if (p.z > C.BAT_Z - 0.5 && p.z < C.BAT_Z + 0.5 && p.x > S.batX - 0.25 && p.x < S.batX + 0.47 && p.y < 0.95) {
     sfx.catch();
     finish({ title: 'PAD PE LAGA!', cls: 'norm', subText: pick(['"How is that?!" — Nahi, gully mein LBW nahi hota!', 'Pad pe laga, dot ball.']), dead: true });
     return;
@@ -1214,6 +1263,17 @@ function poseBatter(dt) {
   bt.torso.rotation.y = S.swing.on ? (sw - 0.35) * 0.5 : 0;
   bt.head.rotation.x = react === 'out' ? 0.35 : -0.3 * sip * pulse;
   bt.group.position.y = react === 'six' || react === 'run' ? Math.abs(Math.sin(time * 10)) * 0.25 : 0;
+  bt.group.position.x = S.batX;
+  // quick footwork while shuffling along the crease
+  const mv = clamp(Math.abs(S.batVel) / MOVE_SPEED, 0, 1);
+  if (mv > 0.05 && !S.swing.on && stand < 0.2) {
+    const ph = time * 17;
+    bt.legL.rotation.x += Math.sin(ph) * 0.3 * mv;
+    bt.legR.rotation.x -= Math.sin(ph) * 0.3 * mv;
+    bt.kneeL.rotation.x += Math.max(0, Math.sin(ph + 1.5)) * 0.35 * mv;
+    bt.kneeR.rotation.x += Math.max(0, -Math.sin(ph + 1.5)) * 0.35 * mv;
+    bt.root.position.y += Math.abs(Math.sin(ph)) * 0.03 * mv;
+  }
   if (react === 'six' || react === 'run') {
     bt.torso.rotation.x = -0.1;
     bt.legL.rotation.x = bt.legR.rotation.x = 0;
@@ -1318,8 +1378,8 @@ function poseBowler(realDt) {
   if (!(react === 'out' && S.mode !== 'runup')) bw.group.position.y = 0;
   if (S.mode !== 'runup') syncRig(bw);
   const watching = S.mode === 'bowling' || S.mode === 'live' || S.mode === 'result';
-  if (watching) lookAtPoint(bw, ball.hit ? ball.pos.x : C.BAT_X, ball.hit ? ball.pos.z : C.BAT_Z, 0.2);
-  else lookAtPoint(bw, C.BAT_X, C.BAT_Z, 0.2);
+  if (watching) lookAtPoint(bw, ball.hit ? ball.pos.x : S.batX, ball.hit ? ball.pos.z : C.BAT_Z, 0.2);
+  else lookAtPoint(bw, S.batX, C.BAT_Z, 0.2);
 }
 
 function animateFielders(dt) {
@@ -1620,11 +1680,44 @@ function updateWalkers(dt) {
   }
 }
 
+// aim ring (where it pitches) + arrival marker (where it reaches the bat), shown while the ball is on its way
+const ringGeo = new THREE.RingGeometry(0.2, 0.3, 40);
+const landRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffc233, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+const arriveRing = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x2de2c8, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+for (const r of [landRing, arriveRing]) {
+  r.rotation.x = -Math.PI / 2;
+  r.visible = false;
+  r.renderOrder = 3;
+  scene.add(r);
+}
+function predictLine() {
+  const d = S.delivery;
+  const x0 = W.bowler.group.position.x + 0.3;
+  const z0 = W.bowler.group.position.z + 0.3;
+  const t1 = (d.land - z0) / d.vzv;
+  const Tbat = t1 + (C.CONTACT.z - d.land) / (d.vzv * 0.88);
+  const vx = (d.tx - d.spinx * (Tbat - t1) * 0.5 - x0) / Tbat;
+  S.landX = x0 + vx * t1;
+  S.arriveX = d.tx;
+}
 const BHEL = { x: 8.4, z: -5.4 };
 let bhelOn = false;
 let bhelMixer = null;
 function animate(dt, realDt) {
   if (bhelMixer) bhelMixer.update(realDt);
+  const showRings = S.mode === 'runup' || (S.mode === 'bowling' && !ball.hit && !ball.bounced);
+  landRing.visible = showRings;
+  arriveRing.visible = S.mode === 'runup' || (S.mode === 'bowling' && !ball.hit);
+  if (landRing.visible) {
+    landRing.position.set(S.landX, 0.04, S.delivery.land);
+    landRing.scale.setScalar(1 + Math.sin(time * 8) * 0.1);
+  }
+  if (arriveRing.visible) {
+    arriveRing.position.set(S.arriveX, 0.04, C.CONTACT.z + 0.1);
+    arriveRing.scale.setScalar(1.35 + Math.sin(time * 8 + 1) * 0.1);
+    // green when the bat is lined up with the ball, otherwise teal
+    arriveRing.material.color.set(Math.abs(contactX() - S.arriveX) < 0.55 ? 0x58ff7a : 0x2de2c8);
+  }
   time += dt;
 
   S.react.t = Math.max(0, S.react.t - realDt);

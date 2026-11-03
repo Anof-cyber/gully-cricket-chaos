@@ -190,3 +190,12 @@ body.blackout #hud::before { content: ''; position: absolute; inset: 0; backgrou
 #play:disabled { filter: grayscale(.8) brightness(.7); cursor: wait; animation: none; }
 
 .credit { margin-top: 8px; font-size: 11px; opacity: .55; }
+
+/* ---------- crease movement buttons ---------- */
+.mv { position: absolute; bottom: 26px; width: 64px; height: 64px; border-radius: 50%; padding: 0; pointer-events: auto; touch-action: none; cursor: pointer;
+  font-size: 26px; line-height: 1; color: #fff; display: grid; place-items: center; font-family: system-ui, sans-serif;
+  background: radial-gradient(circle at 35% 28%, rgba(255, 255, 255, .35), rgba(60, 40, 140, .75)); border: 3px solid rgba(255, 255, 255, .8); box-shadow: 0 5px 0 rgba(0, 0, 0, .35); }
+#moveL { left: 124px; } #moveR { left: 200px; }
+.mv.held { background: radial-gradient(circle at 35% 28%, #b8fff3, var(--teal)); color: #0c3a33; transform: translateY(3px); box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
+@media (max-width: 700px) { .mv { width: 54px; height: 54px; font-size: 22px; bottom: 22px; } #moveL { left: 104px; } #moveR { left: 166px; } }
+@media (max-height: 520px) { .mv { width: 46px; height: 46px; font-size: 18px; bottom: 14px; } #moveL { left: 88px; } #moveR { left: 142px; } }
