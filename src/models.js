@@ -116,6 +116,18 @@ export function cloneModel(template, { length = 2, yaw = 0 } = {}) {
       o.castShadow = true;
       o.receiveShadow = true;
       o.userData.shared = true; // geometry/materials belong to the template: never dispose them
+      // shiny PBR materials go black without an environment map: keep the paint matte-ish
+      for (const mt of [].concat(o.material)) {
+        if (!mt) continue;
+        if (mt.metalness > 0.3) mt.metalness = 0.3;
+        if (mt.transparent) {
+          // alpha-blended meshes sort badly (black speckles): use a hard cut-out instead
+          mt.transparent = false;
+          mt.alphaTest = 0.5;
+          mt.depthWrite = true;
+          mt.needsUpdate = true;
+        }
+      }
     }
   });
   return holder;

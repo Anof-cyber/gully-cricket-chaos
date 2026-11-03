@@ -1444,7 +1444,7 @@ function animatePeople(realDt) {
 let TPL = null; // real-model templates once loaded
 const riderPool = [];
 const traffic = { list: [], timer: rand(5, 9), noted: false };
-const VEHICLES = [{ kind: 'auto', w: 1, speed: [6.5, 8.5], colors: [0xf2c230] }]; // the real auto-rickshaw model is the only vehicle
+const VEHICLES = [{ kind: 'auto', w: 1, speed: [6.5, 8.5], colors: [0xf2c230], yaw: Math.PI }]; // the real auto-rickshaw model is the only vehicle
 const _vt = new THREE.Vector3();
 const _vt2 = new THREE.Vector3();
 
@@ -1887,7 +1887,7 @@ loadTemplates({ batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', 
     }
   }
   if (t.cow) {
-    const a = makeAnimal(t.cow, { length: 1.8, yaw: -Math.PI / 2 });
+    const a = makeAnimal(t.cow, { length: 1.8, yaw: Math.PI / 2 });
     if (a) {
       W.cow.group.children.slice().forEach((c) => (c.visible = false));
       W.cow.group.add(a.holder);
