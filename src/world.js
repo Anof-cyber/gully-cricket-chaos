@@ -1095,7 +1095,7 @@ export function buildWorld(scene) {
   regular(-7.7, -5.4, Math.PI / 2 - 0.4, 0x7fc6a4, 0x4a3c30);
   // sabzi / fruit cart on the right
   const sabzi = new THREE.Group();
-  sabzi.position.set(7.4, 0.16, -2.2);
+  sabzi.position.set(7.4, 0.16, -16.2);
   sabzi.rotation.y = -Math.PI / 2;
   box(1.8, 0.7, 1.0, 0x6b8e4e, 0, 0.62, 0, sabzi);
   box(1.9, 0.07, 1.1, 0xc98a4b, 0, 1.0, 0, sabzi);
@@ -1105,7 +1105,7 @@ export function buildWorld(scene) {
   const heap = [0xe63946, 0xff9f1c, 0x2a9d5c, 0xf4d35e];
   for (let i = 0; i < 4; i++) for (let k = 0; k < 7; k++) sph(0.1, heap[i], -0.7 + i * 0.47 + rnd(-0.12, 0.12), 1.12 + rnd(0, 0.12), rnd(-0.32, 0.32), sabzi, { rough: 0.6 });
   scene.add(sabzi);
-  regular(8.4, -2.2, -Math.PI / 2, 0xe36bae, 0x7a2c4e);
+  regular(8.4, -16.2, -Math.PI / 2, 0xe36bae, 0x7a2c4e);
   // roadside shrine with marigolds, against the right wall
   const shrine = new THREE.Group();
   shrine.position.set(C.HALF_W - 0.5, 0.16, -19);
@@ -1301,7 +1301,7 @@ export function buildWorld(scene) {
   // ---- people on the sidelines
   W.kids = [];
   const kidDefs = [
-    { x: -7.4, z: -9, s: 0xffd23f }, { x: 7.4, z: -6.8, s: 0x38bdf8 }, { x: -7.6, z: -18.5, s: 0xf472b6 }, { x: 7.6, z: -14, s: 0x4ade80 },
+    { x: -7.4, z: -9, s: 0xffd23f }, { x: 7.4, z: -9.4, s: 0x38bdf8 }, { x: -7.6, z: -18.5, s: 0xf472b6 }, { x: 7.6, z: -12.6, s: 0x4ade80 },
   ];
   for (const k of kidDefs) {
     const kid = makePerson({ shirt: k.s, pants: 0x3a3f5c, skin: pick([0xc68a5c, 0xa8743f, 0xd9a273]), hair: 0x1b1410, scale: 0.7, outline: false, shorts: true, style: pick(['short', 'spiky', 'pony']) });

@@ -941,6 +941,15 @@ function liveEvents(h) {
     return;
   }
 
+  // bhelpuri cart is solid: the ball stops dead and the vendor is not amused
+  if (bhelOn && p.x > BHEL.x - 1.2 && p.x < BHEL.x + 1.2 && p.z > BHEL.z - 1.4 && p.z < BHEL.z + 1.4 && p.y < 2.8) {
+    sfx.crash();
+    burst(new THREE.Vector3(BHEL.x - 1, 1.4, BHEL.z), [0xffc233, 0xf2a23c, 0xe63946, 0x2a9d5c], 40, 4, { up: 3, life: 1.1 });
+    floater('😡', new THREE.Vector3(BHEL.x - 1, 2.8, BHEL.z), 1.4);
+    finish({ title: 'BHEL KHARAB!', cls: 'out', subText: 'Kailash bhaiya: "Meri bhelpuri pe gend?!"', uncle: 15, dead: true, long: true });
+    return;
+  }
+
   // tea cart
   const tcp = W.tea.position;
   if (p.x > tcp.x - 0.8 && p.x < tcp.x + 0.8 && p.z > tcp.z - 0.8 && p.z < tcp.z + 0.8 && p.y < 2.4) {
@@ -1611,7 +1620,11 @@ function updateWalkers(dt) {
   }
 }
 
+const BHEL = { x: 8.4, z: -5.4 };
+let bhelOn = false;
+let bhelMixer = null;
 function animate(dt, realDt) {
+  if (bhelMixer) bhelMixer.update(realDt);
   time += dt;
 
   S.react.t = Math.max(0, S.react.t - realDt);
@@ -1795,7 +1808,7 @@ function frame(now) {
 // ------------------------------------------------------------------ real human models (optional)
 // Drop rigged humanoid GLBs into public/models/people/ (man.glb, woman.glb). If they are missing the
 // procedural characters stay.
-loadTemplates({ batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', bowler: import.meta.env.BASE_URL + 'models/bowler/bowler.glb', male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', cow: import.meta.env.BASE_URL + 'models/animals/cow.glb', pole: import.meta.env.BASE_URL + 'models/props/pole.glb', ...Object.fromEntries(['auto'].map((k) => ['veh_' + k, import.meta.env.BASE_URL + `models/vehicles/${k}.glb`])) }, (p) => {
+loadTemplates({ batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', bowler: import.meta.env.BASE_URL + 'models/bowler/bowler.glb', male: import.meta.env.BASE_URL + 'models/people/man.glb', female: import.meta.env.BASE_URL + 'models/people/woman.glb', dog: import.meta.env.BASE_URL + 'models/animals/dog.glb', cow: import.meta.env.BASE_URL + 'models/animals/cow.glb', pole: import.meta.env.BASE_URL + 'models/props/pole.glb', bhel: import.meta.env.BASE_URL + 'models/props/bhelpuri.glb', ...Object.fromEntries(['auto'].map((k) => ['veh_' + k, import.meta.env.BASE_URL + `models/vehicles/${k}.glb`])) }, (p) => {
   $('loadFill').style.width = Math.round(p * 100) + '%';
   $('loadTxt').textContent = `LOADING THE GULLY… ${Math.round(p * 100)}%`;
 }).then((t) => {
@@ -1822,6 +1835,31 @@ loadTemplates({ batter: import.meta.env.BASE_URL + 'models/Batsman/batter.glb', 
     });
   }
   for (const k of ['auto']) if (t['veh_' + k]) VEH_TPL[k] = t['veh_' + k];
+  if (t.bhel) {
+    // Kailash Bhelpuri cart on the right footpath, front facing the lane
+    const m = t.bhel;
+    m.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(m);
+    const c = bb.getCenter(new THREE.Vector3());
+    const holder = new THREE.Group();
+    holder.add(m);
+    m.position.set(-c.x, -bb.min.y, -c.z);
+    m.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = true;
+        o.receiveShadow = true;
+      }
+    });
+    holder.scale.setScalar(2.7 / (bb.max.y - bb.min.y));
+    holder.rotation.y = -Math.PI / 2;
+    holder.position.set(BHEL.x, 0.16, BHEL.z);
+    scene.add(holder);
+    if (t.bhel.animations && t.bhel.animations.length) {
+      bhelMixer = new THREE.AnimationMixer(m);
+      t.bhel.animations.forEach((a) => bhelMixer.clipAction(a).play());
+    }
+    bhelOn = true;
+  }
   if (t.pole) {
     // real electricity poles: each module is two poles with wires between them, rotated to run down the street
     W.procPoles.visible = false;
